@@ -80,6 +80,19 @@ class NTURGBDwithFlow(Dataset):
     the camera ID, ppp is the performer (subject) ID, rrr is the replication 
     number (1 or 2), and aaa is the action class label.
     """
+    
+    """
+      Videoname_sequences looks like  in the format of SsssCcccPpppRrrrAaaaFfff 
+    (e.g., S001C002P003R002A013F001), in which sss is the setup number, ccc is 
+    the camera ID, ppp is the performer (subject) ID, rrr is the replication 
+    number (1 or 2), and aaa is the action class label. fff is the tensor unit 
+    based on target-length, it divides the frames in consecutive sequences from 
+    one action video.
+    """
+    
+    
+    
+    """ Old code
     for videoname in self.meta['videonames']:
       if self.subset == 'all':
         self.videonames.append(videoname)
@@ -92,12 +105,55 @@ class NTURGBDwithFlow(Dataset):
           # 16,560 samples
           self.videonames.append(videoname)
     self.videonames = sorted(self.videonames)
+    """
     
     
-    print(len(self.videonames))
-    exit()
+    """
+    Addind new code here
+    """
+
+        
+    for videoname in self.meta['videonames']:
+      if self.subset == 'all':
+        self.videonames.append(videoname)
+        
+        length = self.meta['framelength'][videoname]-5
+        #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
+        seq_size = (length-(length%self.target_length))//self.target_length
+        for f in range(1,seq_size+1):
+            self.videonames_sequences.append(videoname+"F"+'{0:03d}'.format(f))
+
+        
+      elif self.subset == 'train':
+        if int(videoname[9:12]) in [1,2,4,5,8,9,13,14,15,16,17,18,19,25,27,28,31,34,35,38]:
+            # Cross-Subject Evalutation subjects (perferomers id), 40,320 samples
+            self.videonames.append(videoname)
+            
+            length = self.meta['framelength'][videoname]-5
+            
+            #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
+            seq_size = (length-(length%self.target_length))//self.target_length
+            for f in range(1,seq_size+1):
+                self.videonames_sequences.append(videoname+"F"+'{0:03d}'.format(f))
+
+      else: # test set
+        if int(videoname[9:12]) not in [1,2,4,5,8,9,13,14,15,16,17,18,19,25,27,28,31,34,35,38]:
+            # 16,560 samples
+            self.videonames.append(videoname)
+            
+            length = self.meta['framelength'][videoname]-5
+            #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
+            seq_size = (length-(length%self.target_length))//self.target_length
+            for f in range(1,seq_size+1):
+                self.videonames_sequences.append(videoname+"F"+'{0:03d}'.format(f))
+    
+    self.videonames = sorted(self.videonames)
+    self.videonames_sequences = sorted(self.videonames_sequences)
     
     
+    #print("total videos------------------------",len(self.videonames))
+    #print("total new stuff------------------------",len(self.videonames_sequences))
+    #exit()
     
     if self.visual_transform is None:
       self.rgb_transform = transforms.Compose([
@@ -114,30 +170,57 @@ class NTURGBDwithFlow(Dataset):
                                                    std=[0.229, 0.224, 0.225])
                               ])
 
-    print('NTURGBDwithFlow is initialized. '
-          '(Subset: {}, Length: {})'.format(self.subset, len(self.videonames)) )
+    ###print('NTURGBDwithFlow is initialized. '
+    ###      '(Subset: {}, Length: {})'.format(self.subset, len(self.videonames_sequences)) )
 
+    print('NTURGBDwithFlow is initialized. '
+          '(Subset: {}, Length: {})'.format(self.subset, len(self.videonames_sequences)) )
+    
   def __len__(self):
-      return len(self.videonames)
+    return len(self.videonames_sequences)
+    #return len(self.videonames)
 
   def __getitem__(self, idx):
     
-    #print ('-------------------------------------------')
+    ####print ('-------------------------------------------',idx)
     
-    videoname = self.videonames[idx]
+    
+    videoname_sequence = self.videonames_sequences[idx]
+    videoname = videoname_sequence[0:20]
+    
+    #print("videoname------------------------",videoname)
+    #print("videoname_seq--------------------",videoname_sequence)
+    
+    frame_segment = int(videoname_sequence[21:])
+    #print("frame_segment--------------------",str(frame_segment))
+    
+    #########print("total___frame--------------------",self.meta['framelength'][videoname])
+    #########print("framesssssssssss--------------------", list(range( (frame_segment*self.target_length)-self.target_length, (frame_segment*self.target_length))) )
+    
+
+    
     ####print("*************Videoname**********",videoname)
     ####print([db_item == videoname for db_item in self.meta['framelength']])
     ####print("!!!!!!!!!!!!!!!!!!!self meta size: ",self.meta['framelength'][videoname])
-    length = self.meta['framelength'][videoname]
-    ####length = len(self.meta['framelength'])
     
-    cropped_length = (length - (length % self.target_length) )
-    frame_indices = list (range(cropped_length))
+    
+    length = self.meta['framelength'][videoname]
+    
+    ##cropped_length = (length - (length % self.target_length) )
+    ##frame_indices = list (range(cropped_length))
+    
+    frame_indices = list(range( (frame_segment*self.target_length)-self.target_length, (frame_segment*self.target_length)))
+    
+    
+    #print("=======actual={}/{}==={}".format(frame_indices,length,videoname) )
+
     #####frame_indices = np.linspace(0, cropped_length-1, endpoint=False, 
     #####                            num=cropped_length-1, dtype=int)
       # Exclude last frame so we can use the same number of flow images
     #####frame_indices = list(frame_indices)
 
+    
+    
 
     rgb_h5_path = os.path.join(self.rgb_h5_dir, videoname + '_pngs.h5')
     rgb_h5 = h5py.File(rgb_h5_path, 'r')
@@ -148,14 +231,14 @@ class NTURGBDwithFlow(Dataset):
     rgb = []
     ####for byte in rgb_h5["pngs"][frame_indices]:
     for byte in rgb_h5["pngs"][frame_indices]:
-        rgb = cv2.imdecode(byte, flags=cv2.IMREAD_COLOR)
-        rgb = self.rgb_transform(rgb)
-        rgbs.append(rgb)
-
+      rgb = cv2.imdecode(byte, flags=cv2.IMREAD_COLOR)
+      rgb = self.rgb_transform(rgb)
+      rgbs.append(rgb)
     rgbs = torch.stack(rgbs)
+
+
     
-    rgbs = torch.unsqueeze(rgbs,0)
-    rgbs = np.reshape(rgbs, (rgbs.size()[1]//self.target_length,self.target_length,3,self.side_size,self.side_size))
+    
     
     
     #############depth_h5_path = os.path.join(self.depth_h5_dir, videoname + '_pngs.h5')
@@ -165,13 +248,11 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------RGB------------", rgb.size())
     #print("-------------RGBs------------", rgbs.size())
-    #print("-------------RGBNEWWWW------------", rgbs.size())
     #print("-------------RGBs 0------------", len(rgbs[:]))
-    #print("-----------cropped_length--------------", cropped_length)
     #print("-----------frames--------------", frame_indices)
-    #print("-----------length--------------", length)
 
-    
+
+
     for byte in depth_h5['pngs'][frame_indices]:
       depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
       depth = cropND(depth, (self.side_size, self.side_size))
@@ -180,17 +261,11 @@ class NTURGBDwithFlow(Dataset):
       depth = torch.FloatTensor(depth)
       depths.append(depth)
     depths = torch.stack(depths)
-
     
     
     #print("-------------depths------------", depths.size())
 
-    depths = torch.unsqueeze(depths,0) ## skl
-    depths = np.reshape(depths, (depths.size()[1]//self.target_length,self.target_length,1,self.side_size,self.side_size)) ## skl 
-    #print("-------------depths------------", depths.size())
 
-    
-    
     flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
@@ -200,15 +275,12 @@ class NTURGBDwithFlow(Dataset):
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
-
-    
     
     #print("-------------flows------------", flows.size())
 
-    flows = torch.unsqueeze(flows,0) ## skl
-    flows = np.reshape(flows, (flows.size()[1]//self.target_length,self.target_length,3,self.side_size // self.patch_size,self.side_size // self.patch_size)) ## skl    
     
-    #print("-------------flows------------", flows.size())   
+    
+    #############################################print("=================actual={}/{}==={}===".format(frame_indices,length,videoname),idx )
     
     camera_id = int(videoname[5:8])
     replication_id = int(videoname[13:16])
@@ -257,14 +329,23 @@ class NTURGBDwithFlow(Dataset):
       setup_id, otherview_camera_id, subject_id, replication_id, action_id)
 
     otherview_length = self.meta['framelength'][otherview_videoname]
+    
+    #print("-------otherview_length--------",otherview_length)
+    
+    
+    
     ####otherview_frame_indices = np.linspace(0, otherview_length-1, endpoint=False, 
     ####                            num=self.target_length, dtype=int)
       # Exclude last frame so we can use the same number of flow images
     ####otherview_frame_indices = list(otherview_frame_indices)
 
-    otherview_length_cropped = (otherview_length - (otherview_length % self.target_length) )
-    otherview_frame_indices = list(range(otherview_length_cropped))
+    ####otherview_length_cropped = (otherview_length - (otherview_length % self.target_length) )
+    ####otherview_frame_indices = list(range(otherview_length_cropped))
     
+    otherview_frame_indices = frame_indices
+    
+    
+    #print("---------------------------------------------length=",otherview_length,"frame_indices=",otherview_frame_indices,"----videoname=",videoname_sequence)
     
     otherview_depth_h5_path = os.path.join(
       self.depth_h5_dir, otherview_videoname + '_maskeddepth_pngs.h5')
@@ -281,15 +362,18 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------otherview_depths------------", otherview_depths.size())   
     
-    otherview_depths = torch.unsqueeze(otherview_depths,0)  ### skl
-    otherview_depths = np.reshape(otherview_depths, (otherview_depths.size()[1]//self.target_length,self.target_length,1,self.side_size,self.side_size)) ### skl
-    
-    #print("-------------otherview_depths------------", otherview_depths.size())   
 
     otherview_flow_h5_path = os.path.join(
       self.flow_h5_dir, otherview_videoname + '_3dflow.h5')
     otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r')
     otherview_flows = []
+    
+    
+    
+    ##################################print("=================other ={}/{}==={}===".format(otherview_frame_indices,otherview_length,otherview_videoname),idx )
+    
+    
+    #print("-------------",otherview_flow_h5)
     for f in otherview_flow_h5['flow'][otherview_frame_indices]:
       flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
       flow = np.transpose(flow, (2,0,1))
@@ -297,16 +381,25 @@ class NTURGBDwithFlow(Dataset):
       otherview_flows.append(torch.FloatTensor(flow))
     otherview_flows = torch.stack(otherview_flows)
 
-    
-    print("-------------otherview_flows------------", otherview_flows.size())   
 
-    otherview_flows = torch.unsqueeze(otherview_flows,0) ## skl
-    otherview_flows = np.reshape(otherview_flows, (otherview_flows.size()[1]//self.target_length,self.target_length,3,self.side_size // self.patch_size,self.side_size // self.patch_size)) ## skl    
+    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    flow_h5 = h5py.File(flow_h5_path, 'r')
+    flows = []
+    for f in flow_h5['flow'][frame_indices]:
+      flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      flow = np.transpose(flow, (2,0,1))
+      flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+      flows.append(torch.FloatTensor(flow))
+    flows = torch.stack(flows)
     
-    #otherview_flows = torch.stack(otherview_flows)
-    print("-------------otherview_flows------------", otherview_flows.size())  
-    exit()
     
+    
+    
+    
+    
+    #print("-------------otherview_flows------------", otherview_flows.size())   
+    
+
     sample = {'action_id': action_id,
               'camera_id': camera_id,
               'setup_id': setup_id,
@@ -320,7 +413,8 @@ class NTURGBDwithFlow(Dataset):
               'flows': flows,
               'videoname': videoname
               }
-      
+    
+
     return sample
 
 def cropND(img, bounding):

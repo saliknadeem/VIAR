@@ -290,7 +290,8 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
 
       if args.val_every_iter is not None:
         if (args.val_every_iter < len(train_dataset)) and ((iter-1) % args.val_every_iter == 0):
-          break # out of train_loader loop
+            print("--------breaking")
+            break # out of train_loader loop
        
     print('Validation ongoing...') 
     # in validation use iter-1 for iteration # since iter was incremented in train loop
