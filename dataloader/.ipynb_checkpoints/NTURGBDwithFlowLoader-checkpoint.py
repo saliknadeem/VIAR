@@ -117,7 +117,7 @@ class NTURGBDwithFlow(Dataset):
       if self.subset == 'all':
         self.videonames.append(videoname)
         
-        length = self.meta['framelength'][videoname]-5
+        length = self.meta['framelength'][videoname]-6
         #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
         seq_size = (length-(length%self.target_length))//self.target_length
         for f in range(1,seq_size+1):
@@ -129,7 +129,7 @@ class NTURGBDwithFlow(Dataset):
             # Cross-Subject Evalutation subjects (perferomers id), 40,320 samples
             self.videonames.append(videoname)
             
-            length = self.meta['framelength'][videoname]-5
+            length = self.meta['framelength'][videoname]-6
             
             #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
             seq_size = (length-(length%self.target_length))//self.target_length
@@ -141,7 +141,7 @@ class NTURGBDwithFlow(Dataset):
             # 16,560 samples
             self.videonames.append(videoname)
             
-            length = self.meta['framelength'][videoname]-5
+            length = self.meta['framelength'][videoname]-6
             #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
             seq_size = (length-(length%self.target_length))//self.target_length
             for f in range(1,seq_size+1):
@@ -236,10 +236,7 @@ class NTURGBDwithFlow(Dataset):
       rgbs.append(rgb)
     rgbs = torch.stack(rgbs)
 
-
-    
-    
-    
+ 
     
     #############depth_h5_path = os.path.join(self.depth_h5_dir, videoname + '_pngs.h5')
     depth_h5_path = os.path.join(self.depth_h5_dir, videoname + '_maskeddepth_pngs.h5')
@@ -332,7 +329,10 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------otherview_length--------",otherview_length)
     
-    
+    if np.abs(length - otherview_length) >= 4 :
+        print("length=",length,"   otherview=",otherview_length,"  video=",videoname, "   other-video=",otherview_videoname)
+        print("frame_indices=", frame_indices)
+        
     
     ####otherview_frame_indices = np.linspace(0, otherview_length-1, endpoint=False, 
     ####                            num=self.target_length, dtype=int)

@@ -46,14 +46,18 @@ def timeSince(since):
 
 def pngs_to_h5(args, videoname_ind, videoname, length):
   start_time = time.time()
-  video_dir = os.path.join(args.top_dir, videoname ) #+ '_rgb')
+  
+  video_dir = os.path.join(args.top_dir, videoname + '_rgb')
+  #######video_dir = os.path.join(args.top_dir, videoname ) #+ '_rgb')
+
   files = os.listdir(video_dir)
-  #########files = [os.path.join(video_dir, f) for f in files if f.startswith('image') and f.endswith('.png')]
-  files = [os.path.join(video_dir, f) for f in files if f.startswith('MDepth') and f.endswith('.png')]
+
+  files = [os.path.join(video_dir, f) for f in files if f.startswith('image') and f.endswith('.png')]
+  ###########files = [os.path.join(video_dir, f) for f in files if f.startswith('MDepth') and f.endswith('.png')]
   files = sorted(files)
 
-  ##########outfile_path = os.path.join(args.output_dir, videoname + '_pngs.h5')
-  outfile_path = os.path.join(args.output_dir, videoname + '_maskeddepth_pngs.h5')  
+  outfile_path = os.path.join(args.output_dir, videoname + '_pngs.h5')
+  ########outfile_path = os.path.join(args.output_dir, videoname + '_maskeddepth_pngs.h5')  
   outfile = h5py.File(outfile_path, 'w')
   dset = outfile.create_dataset('pngs', (len(files),), 
     maxshape=(len(files),), chunks=True, dtype=dt)
