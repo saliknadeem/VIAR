@@ -267,7 +267,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
 
   for epoch_num in range(epoch_start, n_epoch + 1):
     for batch_ind, sample in enumerate(train_loader):
-      print("chefininsdinsidnsidni")
+      #print("chefininsdinsidnsidni")
       train_result = run(target_modules=target_modules,
                          split='train',
                          sample=sample, 

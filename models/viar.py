@@ -85,7 +85,7 @@ def build_models(args, device='cuda'):
 
   models['viewclassifier'] = ViewClassifier(
     input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
-    num_classes=5, 
+    num_classes=5,
     reverse=(not args.disable_grl)).to(device)
 
   return models
@@ -184,11 +184,18 @@ def run(split, sample, models, target_modules=[], device='cuda',
   otherview_depth_input = sample['otherview_depths'].view(
     (batch_size*target_length,) + DEPTH_INPUT_SHAPE
     ).to(device)
+  otherview2_depth_input = sample['otherview2_depths'].view(
+    (batch_size*target_length,) + DEPTH_INPUT_SHAPE
+    ).to(device) #skl
+    
   crossviewcnn_output = models['crossviewdecodercnn'](otherview_depth_input)
+  crossviewcnn_output2 = models['crossviewdecodercnn'](otherview2_depth_input) #skl
   crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
+  crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
   crossview_output = crossview_output.view(
     (batch_size, target_length) + models['crossviewdecoder'].out_size )
-
+  crossview_output2 = crossview_output2.view(
+    (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
   # ReconstructionDecoder
   reconstruct_output = models['reconstructiondecoder'](encoder_output)
   reconstruct_output = reconstruct_output.view(
@@ -210,10 +217,40 @@ def run(split, sample, models, target_modules=[], device='cuda',
       if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].zero_grad()
       if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad()
     total_loss = 0
-    crossview_loss = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
+    view_accuracy = 0 #skl
+    correct=0
+    
+    crossview_loss1 = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
+    crossview_loss2 = criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device))
+    ####crossview_loss = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
+    crossview_loss = crossview_loss1+crossview_loss2
+
     reconstruct_loss = criterions['reconstruct'](reconstruct_output, sample['flows'].to(device))
     viewclassify_loss = criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device))
     total_loss += (crossview_loss + 0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+    
+    
+    accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
+    viewclassify_max_idx = torch.argmax(accuracy_out, 2, keepdim=False)
+    view_IDs = torch.argmax(sample['view_id'], -1, keepdim=False)
+    #true_preds = [ view_IDs[i].repeat(items.shape) for i,items in enumerate(viewclassify_max_idx) ]
+    true_preds = [view_IDs[i].repeat(viewclassify_max_idx.shape[-1]) for i in range(viewclassify_max_idx.shape[0])]
+    correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
+    view_accuracy += 100. * correct
+    
+    
+    print('\nTotal loss: {:.4f}, Accuracy: ({:.4f}%)\n'.format(total_loss, view_accuracy ))
+    
+    #print("true_preds===============================================",view_accuracy)
+    #print("viewclassify_output=",viewclassify_output.shape,"===",viewclassify_output)
+    #print("accuracy_out",accuracy_out)
+    
+    #print("view_accuracy.item()===========================================",view_accuracy.item())
+    
+    
+    
+    
+    
     if set_grad and total_loss != 0:
       total_loss.backward()
       if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
@@ -227,6 +264,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
     result['logs']['crossview_loss'] = crossview_loss.item() if crossview_loss > 0 else 0
     result['logs']['reconstruct_loss'] = reconstruct_loss.item() if reconstruct_loss > 0 else 0
     result['logs']['viewclassify_loss'] = viewclassify_loss.item() if viewclassify_loss > 0 else 0
+    result['logs']['viewclassify_accuracy'] = view_accuracy.item() if view_accuracy > 0 else 0
 
   return result
 

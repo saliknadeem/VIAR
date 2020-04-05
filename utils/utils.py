@@ -247,7 +247,9 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
   criterions['crossview'] = nn.MSELoss(size_average=False, reduce=True)
   criterions['reconstruct'] = nn.MSELoss(size_average=False, reduce=True)
   criterions['viewclassify'] = nn.CrossEntropyLoss(size_average=False, reduce=True)
-
+  criterions['view_accuracy'] = nn.Softmax(dim=None)
+    
+    
   n_iters = math.ceil(n_epoch * len(train_dataset) / args.batch_size)
 
   epoch_start, iter = 1, 1
@@ -267,7 +269,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
 
   for epoch_num in range(epoch_start, n_epoch + 1):
     for batch_ind, sample in enumerate(train_loader):
-      print("chefininsdinsidnsidni")
+      #print("chefininsdinsidnsidni")
       train_result = run(target_modules=target_modules,
                          split='train',
                          sample=sample, 

@@ -275,8 +275,6 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------flows------------", flows.size())
 
-    
-    
     #############################################print("=================actual={}/{}==={}===".format(frame_indices,length,videoname),idx )
     
     camera_id = int(videoname[5:8])
@@ -319,68 +317,64 @@ class NTURGBDwithFlow(Dataset):
 
     other_cameras = [1,2,3]
     other_cameras.remove(camera_id)
-    otherview_camera_id = self.rng.sample(other_cameras, k=1)[0]
-
+    
+    otherview_camera_id = other_cameras[0]
+    otherview_camera_id2 = other_cameras[1]
     # Get depths images from different camera
     otherview_videoname = 'S{:03d}C{:03d}P{:03d}R{:03d}A{:03d}'.format(
       setup_id, otherview_camera_id, subject_id, replication_id, action_id)
-
+    otherview_videoname2 = 'S{:03d}C{:03d}P{:03d}R{:03d}A{:03d}'.format(
+      setup_id, otherview_camera_id2, subject_id, replication_id, action_id)
+    
+    otherview_videonames = []
+    
+    
+    otherview_videonames.append(otherview_videoname)
+    otherview_videonames.append(otherview_videoname2)
+    
+    
     otherview_length = self.meta['framelength'][otherview_videoname]
     
     #print("-------otherview_length--------",otherview_length)
     
-    if np.abs(length - otherview_length) >= 4 :
-        print("length=",length,"   otherview=",otherview_length,"  video=",videoname, "   other-video=",otherview_videoname)
-        print("frame_indices=", frame_indices)
-        
-    
-    ####otherview_frame_indices = np.linspace(0, otherview_length-1, endpoint=False, 
-    ####                            num=self.target_length, dtype=int)
-      # Exclude last frame so we can use the same number of flow images
-    ####otherview_frame_indices = list(otherview_frame_indices)
-
-    ####otherview_length_cropped = (otherview_length - (otherview_length % self.target_length) )
-    ####otherview_frame_indices = list(range(otherview_length_cropped))
+    #if np.abs(length - otherview_length) >= 5 :
+    #    print("length=",length,"- otherview=",otherview_length,"- video=",videoname, "- other-video=",otherview_videoname)
+    #    print("frame_indices=", frame_indices)
     
     otherview_frame_indices = frame_indices
     
-    
-    #print("---------------------------------------------length=",otherview_length,"frame_indices=",otherview_frame_indices,"----videoname=",videoname_sequence)
-    
-    otherview_depth_h5_path = os.path.join(
-      self.depth_h5_dir, otherview_videoname + '_maskeddepth_pngs.h5')
-    otherview_depth_h5 = h5py.File(otherview_depth_h5_path, 'r')
     otherview_depths = []
-    for byte in otherview_depth_h5['pngs'][otherview_frame_indices]:
-      depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
-      depth = cropND(depth, (self.side_size, self.side_size))
-      depth = np.expand_dims(depth, axis=0)
-      depth = depth.astype(np.float32) / 65535
-      depth = torch.FloatTensor(depth)
-      otherview_depths.append(depth)
-    otherview_depths = torch.stack(otherview_depths)
-    
-    #print("-------------otherview_depths------------", otherview_depths.size())   
-    
-
-    otherview_flow_h5_path = os.path.join(
-      self.flow_h5_dir, otherview_videoname + '_3dflow.h5')
-    otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r')
     otherview_flows = []
-    
-    
-    
-    ##################################print("=================other ={}/{}==={}===".format(otherview_frame_indices,otherview_length,otherview_videoname),idx )
-    
-    
-    #print("-------------",otherview_flow_h5)
-    for f in otherview_flow_h5['flow'][otherview_frame_indices]:
-      flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
-      flow = np.transpose(flow, (2,0,1))
-      flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
-      otherview_flows.append(torch.FloatTensor(flow))
-    otherview_flows = torch.stack(otherview_flows)
+    for otherview_videoname_index in otherview_videonames:
 
+        otherview_depth_h5_path = os.path.join(
+          self.depth_h5_dir, otherview_videoname_index + '_maskeddepth_pngs.h5')
+        otherview_depth_h5 = h5py.File(otherview_depth_h5_path, 'r')
+ 
+        for byte in otherview_depth_h5['pngs'][otherview_frame_indices]:
+          depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+          depth = cropND(depth, (self.side_size, self.side_size))
+          depth = np.expand_dims(depth, axis=0)
+          depth = depth.astype(np.float32) / 65535
+          depth = torch.FloatTensor(depth)
+          otherview_depths.append(depth)
+        
+
+        #print("-------------otherview_depths------------", otherview_depths.size())   
+
+
+        otherview_flow_h5_path = os.path.join(
+          self.flow_h5_dir, otherview_videoname_index + '_3dflow.h5')
+        otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r')
+        for f in otherview_flow_h5['flow'][otherview_frame_indices]:
+          flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+          flow = np.transpose(flow, (2,0,1))
+          flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+          otherview_flows.append(torch.FloatTensor(flow))
+        
+    
+    otherview_depths = torch.stack(otherview_depths)
+    otherview_flows = torch.stack(otherview_flows)
 
     flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
@@ -391,15 +385,18 @@ class NTURGBDwithFlow(Dataset):
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
-    
-    
-    
-    
-    
-    
-    #print("-------------otherview_flows------------", otherview_flows.size())   
-    
 
+
+    
+    
+    ##print("-------------otherview_depths------------", otherview_depths.size())   
+    ##print("-------------otherview_flows------------", otherview_flows.size())
+    ##print("-------------otherview_depths------------", otherview_depths[0:6,:,:,:].size())   
+    ##print("-------------otherview_flows------------", otherview_flows[6:,:,:,:].size())
+    ##exit()
+
+    #print("-------view_id--------",view_id)
+    #print("-------torch.Tensor(view_id)--------",torch.Tensor(view_id))
     sample = {'action_id': action_id,
               'camera_id': camera_id,
               'setup_id': setup_id,
@@ -408,8 +405,10 @@ class NTURGBDwithFlow(Dataset):
               'view_id': torch.Tensor(view_id),
               'rgbs': rgbs,
               'depths': depths,
-              'otherview_depths': otherview_depths,
-              'otherview_flows': otherview_flows,
+              'otherview_depths': otherview_depths[0:6,:,:,:],
+              'otherview_flows': otherview_flows[0:6,:,:,:],
+              'otherview2_depths': otherview_depths[6:,:,:,:],
+              'otherview2_flows': otherview_flows[6:,:,:,:],             
               'flows': flows,
               'videoname': videoname
               }
