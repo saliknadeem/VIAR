@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 
 from networks import CNN, Encoder, CrossViewDecoder, \
-                     ReconstructionDecoder, ViewClassifier
+                     ReconstructionDecoder, ViewClassifier, ActionClassifier
 
 sys.path.append('..')
 from dataloader.NTURGBDwithFlowLoader import NTURGBDwithFlowLoader
@@ -239,7 +239,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
     view_accuracy += 100. * correct
     
     
-    print('\nTotal loss: {:.4f}, Accuracy: ({:.4f}%)\n'.format(total_loss, view_accuracy ))
+    #print('\nTotal loss: {:.4f}, Accuracy: ({:.4f}%)\n'.format(total_loss, view_accuracy ))
     
     #print("true_preds===============================================",view_accuracy)
     #print("viewclassify_output=",viewclassify_output.shape,"===",viewclassify_output)

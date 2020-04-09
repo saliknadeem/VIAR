@@ -230,7 +230,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
 
   if args.val_size is None:
     args.val_size = len(val_dataset)
-    
+
   if args.val_size < 2:
     print('Warning: val_size must bigger than 1. val_size will be set to 100.')
     args.val_size = 100

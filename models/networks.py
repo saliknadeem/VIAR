@@ -275,3 +275,30 @@ class ViewClassifier(nn.Module):
     x = F.relu( self.fc1( x ) )
     x = self.fc2(x)
     return x
+
+
+class ActionClassifier(nn.Module):
+  def __init__(self, input_size, num_classes):
+    super(ActionClassifier, self).__init__()
+    self.num_classes = num_classes
+    
+    # Gradient Reversal Layer with two 
+    #self.grl = RevGrad(reverse=reverse)
+    self.fc1 = nn.Linear(input_size, 1024)
+    self.fc2 = nn.Linear(1024, self.num_classes)
+
+    self.fc1.apply(self._init_weights)
+    self.fc2.apply(self._init_weights)
+
+  def _init_weights(self, m):
+    if type(m) == nn.Linear:
+      nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+      m.bias.data.fill_(0.01)
+    else:
+      nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+
+  def forward(self, x):
+    #x = self.grl(x)
+    x = F.relu( self.fc1( x ) )
+    x = self.fc2(x)
+    return x

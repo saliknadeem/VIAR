@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 
 from networks import CNN, Encoder, CrossViewDecoder, \
-                     ReconstructionDecoder, ViewClassifier
+                     ReconstructionDecoder, ViewClassifier, ActionClassifier
 
 sys.path.append('..')
 from dataloader.NTURGBDwithFlowLoader import NTURGBDwithFlowLoader
@@ -224,26 +224,22 @@ def run(split, sample, models, target_modules=[], device='cuda',
     crossview_loss2 = criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device))
     ####crossview_loss = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
     crossview_loss = crossview_loss1+crossview_loss2
-    accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
-    
+
     reconstruct_loss = criterions['reconstruct'](reconstruct_output, sample['flows'].to(device))
     viewclassify_loss = criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device))
     total_loss += (crossview_loss + 0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
     
-
+    
+    accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
     viewclassify_max_idx = torch.argmax(accuracy_out, 2, keepdim=False)
     view_IDs = torch.argmax(sample['view_id'], -1, keepdim=False)
     #true_preds = [ view_IDs[i].repeat(items.shape) for i,items in enumerate(viewclassify_max_idx) ]
     true_preds = [view_IDs[i].repeat(viewclassify_max_idx.shape[-1]) for i in range(viewclassify_max_idx.shape[0])]
-    
     correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
-    #print("true_preds===============================================",correct)
-    #print("correct====",correct)
-    #print("true_count====",true_count)
     view_accuracy += 100. * correct
     
     
-    print('\nTotal loss: {:.4f}, Accuracy: ({:.4f}%)\n'.format(total_loss, view_accuracy ))
+    #print('\nTotal loss: {:.4f}, Accuracy: ({:.4f}%)\n'.format(total_loss, view_accuracy ))
     
     #print("true_preds===============================================",view_accuracy)
     #print("viewclassify_output=",viewclassify_output.shape,"===",viewclassify_output)
