@@ -171,7 +171,9 @@ def testIters(run, test_loader, test_dataset, models={}, checkpoint_files={},
   print('Test ongoing...')
   out_h5_path = os.path.join(args.output_dir, 'VIAR_encoder_outputs.h5')
   out_h5 = h5py.File(out_h5_path)
+  print('---path=',out_h5_path)
   for test_batch_ind, test_sample in enumerate(test_loader):
+    #print('inside for...')
     test_result = run(target_modules=[],
                       split='test',
                       sample=test_sample, 
@@ -179,15 +181,22 @@ def testIters(run, test_loader, test_dataset, models={}, checkpoint_files={},
                       criterions={},
                       args=args,
                       device=device)
-
+    #print('got test results...')
     encoder_output = test_result['output']['encoder_output'].cpu().numpy()
-    for name_ind in range(len(test_sample['videoname'])):
-      dset = out_h5.create_dataset(test_sample['videoname'][name_ind], 
+    for name_ind in range(len(test_sample['videoname_sequence'])):
+      #print('second for loop...',out_h5," - ",test_sample['videoname_sequence'][name_ind],"shape=",encoder_output.shape[1:])
+      dset = out_h5.create_dataset(test_sample['videoname_sequence'][name_ind], 
         encoder_output.shape[1:], # e.g. (6, 128, 7, 7)
         maxshape=encoder_output.shape[1:], 
         chunks=True, dtype='f8')
+      #print('dest 1 worked..')
       dset[:] = encoder_output[name_ind]
+      #print('dest 2 worked..')
       print('Saved encoder output of {}'.format(test_sample['videoname'][name_ind]))
+
+    
+    
+
 
 
 def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val_dataset,
@@ -230,7 +239,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
 
   if args.val_size is None:
     args.val_size = len(val_dataset)
-    
+
   if args.val_size < 2:
     print('Warning: val_size must bigger than 1. val_size will be set to 100.')
     args.val_size = 100
@@ -247,7 +256,10 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
   criterions['crossview'] = nn.MSELoss(size_average=False, reduce=True)
   criterions['reconstruct'] = nn.MSELoss(size_average=False, reduce=True)
   criterions['viewclassify'] = nn.CrossEntropyLoss(size_average=False, reduce=True)
-
+  criterions['view_accuracy'] = nn.Softmax(dim=None)
+  criterions['actionclassify'] = nn.CrossEntropyLoss(size_average=False, reduce=True)
+  criterions['action_accuracy'] = nn.Softmax(dim=None)
+    
   n_iters = math.ceil(n_epoch * len(train_dataset) / args.batch_size)
 
   epoch_start, iter = 1, 1
@@ -326,7 +338,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
         'val_data/{}'.format(log), val_log_mean[log], iter-1
         )
 
-    print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
+    ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
 
     # Save checkpoint every epoch    
     save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers,

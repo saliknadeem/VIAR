@@ -395,8 +395,17 @@ class NTURGBDwithFlow(Dataset):
     ##print("-------------otherview_flows------------", otherview_flows[6:,:,:,:].size())
     ##exit()
 
+    
+    action_label = videoname[17:].strip("0")
+    
+    # action_label to categorical one-hot vector
+    action_label = np.eye(60, dtype='bool')[int(action_label)-1].astype(int) # 60 for 60 action classes, action_label-1 for number to index
+    
     #print("-------view_id--------",view_id)
+    #print("video=",videoname,"\n-------action_label--------",action_label)
     #print("-------torch.Tensor(view_id)--------",torch.Tensor(view_id))
+   # exit()
+    
     sample = {'action_id': action_id,
               'camera_id': camera_id,
               'setup_id': setup_id,
@@ -408,9 +417,11 @@ class NTURGBDwithFlow(Dataset):
               'otherview_depths': otherview_depths[0:6,:,:,:],
               'otherview_flows': otherview_flows[0:6,:,:,:],
               'otherview2_depths': otherview_depths[6:,:,:,:],
-              'otherview2_flows': otherview_flows[6:,:,:,:],             
+              'otherview2_flows': otherview_flows[6:,:,:,:], 
+              'action_label': action_label,
               'flows': flows,
-              'videoname': videoname
+              'videoname': videoname,
+              'videoname_sequence':videoname_sequence
               }
     
 

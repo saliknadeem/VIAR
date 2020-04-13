@@ -28,7 +28,7 @@ RGB_INPUT_SHAPE = (3,224,224)
 DEPTH_INPUT_SHAPE = (1,224,224)
 FLOW_SHAPE = (3,28,28)
 ALL_MODELS = ['encodercnn', 'encoder','crossviewdecoder','crossviewdecodercnn',
-              'reconstructiondecoder','viewclassifier']
+              'reconstructiondecoder','viewclassifier', 'actionclassifier']
 LOG_PREFIX = 'VIAR'
 
 def main():
@@ -54,6 +54,8 @@ def main():
 
   elif args.for_what == 'test':
     main_test(checkpoint_files, args, margs, models)
+  elif args.for_what == 'trainAction':
+    main_trainAction(checkpoint_files, args, margs, models)
 
   else:
     raise NotImplementedError(
@@ -87,6 +89,10 @@ def build_models(args, device='cuda'):
     input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
     num_classes=5,
     reverse=(not args.disable_grl)).to(device)
+
+  models['actionclassifier'] = ActionClassifier(
+    input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
+    num_classes=60).to(device)
 
   return models
 
@@ -126,6 +132,47 @@ def main_train(checkpoint_files, args, margs, models):
              models=models, all_models=ALL_MODELS, log_prefix=LOG_PREFIX, 
              checkpoint_files=checkpoint_files, save_dir=args.save_dir, 
              args=args, device=margs['device'])
+
+
+def main_trainAction(checkpoint_files, args, margs, models):
+  train_loader, train_dataset = NTURGBDwithFlowLoader(
+    json_file=margs['json_file'], 
+    label_file=margs['label_file'], 
+    rgb_h5_dir=margs['rgb_h5_dir'], 
+    depth_h5_dir=margs['depth_h5_dir'], 
+    flow_h5_dir=margs['flow_h5_dir'], 
+    target_length=args.target_length, 
+    subset='train', 
+    visual_transform=args.visual_transform, 
+    batch_size=args.batch_size, 
+    shuffle=True, 
+    num_workers=args.num_workers, 
+    pin_memory=True
+    ) 
+
+  val_loader, val_dataset = NTURGBDwithFlowLoader(
+    json_file=margs['json_file'], 
+    label_file=margs['label_file'], 
+    rgb_h5_dir=margs['rgb_h5_dir'], 
+    depth_h5_dir=margs['depth_h5_dir'], 
+    flow_h5_dir=margs['flow_h5_dir'], 
+    target_length=args.target_length, 
+    subset='test', 
+    visual_transform=args.visual_transform, 
+    batch_size=args.batch_size, 
+    shuffle=True, 
+    num_workers=args.num_workers, 
+    pin_memory=True
+    ) 
+
+  trainIters(runAction, args.target_modules, 
+             train_loader, train_dataset, val_loader, val_dataset,
+             models=models, all_models=ALL_MODELS, log_prefix=LOG_PREFIX, 
+             checkpoint_files=checkpoint_files, save_dir=args.save_dir, 
+             args=args, device=margs['device'])
+
+
+
 
 def main_test(checkpoint_files, args, margs, models):
   test_loader, test_dataset = NTURGBDwithFlowLoader(
@@ -182,11 +229,9 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
   # CrossViewDecoder
   otherview_depth_input = sample['otherview_depths'].view(
-    (batch_size*target_length,) + DEPTH_INPUT_SHAPE
-    ).to(device)
+    (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
   otherview2_depth_input = sample['otherview2_depths'].view(
-    (batch_size*target_length,) + DEPTH_INPUT_SHAPE
-    ).to(device) #skl
+    (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device) #skl
     
   crossviewcnn_output = models['crossviewdecodercnn'](otherview_depth_input)
   crossviewcnn_output2 = models['crossviewdecodercnn'](otherview2_depth_input) #skl
@@ -196,17 +241,22 @@ def run(split, sample, models, target_modules=[], device='cuda',
     (batch_size, target_length) + models['crossviewdecoder'].out_size )
   crossview_output2 = crossview_output2.view(
     (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
+  
+
+
   # ReconstructionDecoder
   reconstruct_output = models['reconstructiondecoder'](encoder_output)
   reconstruct_output = reconstruct_output.view(
     (batch_size, target_length) + models['reconstructiondecoder'].out_size )
 
+    
   # ViewClassifier
   viewclassify_output = models['viewclassifier'](
-    encoder_output.view(batch_size*target_length,-1) 
-    )
+    encoder_output.view(batch_size*target_length,-1) )
   viewclassify_output = viewclassify_output.view(
     (batch_size, target_length) + (models['viewclassifier'].num_classes,) )
+  
+
 
   if split in ['train', 'validate']:
     if set_grad:
@@ -215,10 +265,12 @@ def run(split, sample, models, target_modules=[], device='cuda',
       if 'crossviewdecodercnn' in target_modules: optimizers['crossviewdecodercnn'].zero_grad()
       if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].zero_grad()
       if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].zero_grad()
-      if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad()
+      if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad() #actionaction needed
+    
     total_loss = 0
     view_accuracy = 0 #skl
     correct=0
+    
     
     crossview_loss1 = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
     crossview_loss2 = criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device))
@@ -233,22 +285,9 @@ def run(split, sample, models, target_modules=[], device='cuda',
     accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
     viewclassify_max_idx = torch.argmax(accuracy_out, 2, keepdim=False)
     view_IDs = torch.argmax(sample['view_id'], -1, keepdim=False)
-    #true_preds = [ view_IDs[i].repeat(items.shape) for i,items in enumerate(viewclassify_max_idx) ]
     true_preds = [view_IDs[i].repeat(viewclassify_max_idx.shape[-1]) for i in range(viewclassify_max_idx.shape[0])]
     correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
     view_accuracy += 100. * correct
-    
-    
-    #print('\nTotal loss: {:.4f}, Accuracy: ({:.4f}%)\n'.format(total_loss, view_accuracy ))
-    
-    #print("true_preds===============================================",view_accuracy)
-    #print("viewclassify_output=",viewclassify_output.shape,"===",viewclassify_output)
-    #print("accuracy_out",accuracy_out)
-    
-    #print("view_accuracy.item()===========================================",view_accuracy.item())
-    
-    
-    
     
     
     if set_grad and total_loss != 0:
@@ -268,6 +307,113 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
   return result
 
+
+
+
+def runAction(split, sample, models, target_modules=[], device='cuda',
+        optimizers=None, criterions=None, args=None):
+  result = {}
+  result['logs'] = {}
+  result['output'] = {}
+  if split == 'train':
+    set_grad = True
+    for m in models:
+      if m in target_modules:
+        models[m].train()
+        optimizers[m].zero_grad()
+      else:
+        models[m].eval()
+  else:
+    set_grad = False
+    for m in models:
+      models[m].eval()
+
+  batch_size = len(sample['videoname'])
+  target_length = len(sample['rgbs'][0])
+
+  # Encoder
+  rgb_input = sample['rgbs'].view(
+    (batch_size*target_length,) + RGB_INPUT_SHAPE
+    ).to(device)
+  encodercnn_output = models['encodercnn'](rgb_input)
+  encodercnn_output = encodercnn_output.view(
+    (batch_size, target_length) + models['encodercnn'].out_size )
+  encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
+  if split == 'test':
+    result['output']['encoder_output'] = encoder_output
+  encoder_output = encoder_output.contiguous().view(
+    (batch_size*target_length,) + models['encoder'].out_size[1:] )
+
+
+
+  # ActionClassifier
+  actionclassify_output = models['actionclassifier'](
+    encoder_output.view(batch_size*target_length,-1) 
+    )
+  actionclassify_output = actionclassify_output.view(
+    (batch_size, target_length) + (models['actionclassifier'].num_classes,) )
+    
+    
+
+  if split in ['train', 'validate']:
+    if set_grad:
+      if 'encodercnn' in target_modules: optimizers['encodercnn'].zero_grad()
+      if 'encoder' in target_modules: optimizers['encoder'].zero_grad()
+      if 'actionclassifier' in target_modules: optimizers['actionclassifier'].zero_grad() #actionaction needed
+    
+
+    action_accuracy = 0
+    action_loss = 0
+    correct_action = 0
+
+    
+    #print("actionclassify_output=",actionclassify_output.shape) ([16, 6, 60])
+    action_loss = criterions['actionclassify'](actionclassify_output, sample['action_label'].long().to(device))
+
+    action_accuracy = criterions['action_accuracy'](actionclassify_output.to(device))
+    #print("action_accuracy=",action_accuracy.shape)  # ([16, 6, 60]) # batch, targlen, classes
+    
+    
+    ##############
+    action_acc_mean_T = action_accuracy.mean(1)
+    #print("action_acc_mean_T=",action_acc_mean_T.shape) # ([16, 60])
+    ##############
+    
+    
+    actionclassify_max_idx = torch.argmax(action_acc_mean_T, 1, keepdim=False) #2, keepdim=False)
+    #print("actionclassify_max_idx=",actionclassify_max_idx.shape,actionclassify_max_idx) # ([16])
+    
+    action_IDs = torch.argmax(sample['action_label'], -1, keepdim=False)
+    #print("            action_IDs=",action_IDs.shape, action_IDs) # ([16])
+    
+    #action_true_preds = [action_IDs[i].repeat(actionclassify_max_idx.shape[-1]) for i in range(actionclassify_max_idx.shape[0])]
+    #print("action_true_preds=",len(action_true_preds),action_true_preds) 
+    
+    
+    correct_action =  (torch.sum(  torch.eq(actionclassify_max_idx.float(), action_IDs.to(device))  ) )/float(action_IDs.shape[0])
+    #print("correct_action=",correct_action.shape,correct_action) 
+    
+    action_accuracy = 100. * correct_action
+    
+    print("==========================================================  action_loss",action_loss.item(),", action_accuracy=",action_accuracy.item())
+    
+
+    
+    if set_grad and action_loss != 0:
+      action_loss.backward()
+      if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
+      if 'encoder' in target_modules: optimizers['encoder'].step()
+      if 'actionclassifier' in target_modules: optimizers['actionclassifier'].step() 
+
+    result['logs']['actionclassify'] = action_loss.item() if action_loss > 0 else 0
+    result['logs']['actionrecognition_accuracy'] = action_accuracy.item() if action_accuracy > 0 else 0
+
+  return result
+
+
+
+
+
 def get_args():
   parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -276,6 +422,8 @@ def get_args():
   # What To Do
   parser.add_argument('--train', dest='for_what', 
     action='store_const', const='train', default='train', help='Train')
+  parser.add_argument('--trainAction', dest='for_what', 
+    action='store_const', const='trainAction', default='trainAction', help='TrainAction')
   parser.add_argument('--test', dest='for_what', 
     action='store_const', const='test', help='Test')
   parser.add_argument('--target-modules', dest='target_modules', 
