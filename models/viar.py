@@ -126,7 +126,7 @@ def main_train(checkpoint_files, args, margs, models):
     num_workers=args.num_workers, 
     pin_memory=True
     ) 
-
+  #exit()
   trainIters(run, args.target_modules, 
              train_loader, train_dataset, val_loader, val_dataset,
              models=models, all_models=ALL_MODELS, log_prefix=LOG_PREFIX, 
@@ -163,13 +163,15 @@ def main_trainAction(checkpoint_files, args, margs, models):
     shuffle=True, 
     num_workers=args.num_workers, 
     pin_memory=True
-    ) 
+    )
+    
 
   trainIters(runAction, args.target_modules, 
              train_loader, train_dataset, val_loader, val_dataset,
              models=models, all_models=ALL_MODELS, log_prefix=LOG_PREFIX, 
              checkpoint_files=checkpoint_files, save_dir=args.save_dir, 
              args=args, device=margs['device'])
+
 
 
 

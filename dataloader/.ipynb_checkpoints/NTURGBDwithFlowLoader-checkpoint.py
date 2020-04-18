@@ -111,8 +111,13 @@ class NTURGBDwithFlow(Dataset):
     """
     Addind new code here
     """
-
-        
+    
+    
+    ActionClasses = np.zeros(60)
+    Subjects = np.zeros(40)
+    ViewIDs = np.zeros(5)
+    CamIDs = np.zeros(3)
+    
     for videoname in self.meta['videonames']:
       if self.subset == 'all':
         self.videonames.append(videoname)
@@ -135,7 +140,41 @@ class NTURGBDwithFlow(Dataset):
             seq_size = (length-(length%self.target_length))//self.target_length
             for f in range(1,seq_size+1):
                 self.videonames_sequences.append(videoname+"F"+'{0:03d}'.format(f))
+                
+            ######## Class balance check
+            camera_id = int(videoname[5:8])
+            replication_id = int(videoname[13:16])
 
+            #   Based on camera id and replication id, calculate view id for view 
+            # classification. 
+            # 1: front view, 2: left view (90 deg), 3: right view (90 deg), 
+            # 4: left view (45 deg), 5: right view (45 deg)
+            if replication_id == 1:
+              if camera_id == 2:
+                view_id = 1
+              elif camera_id == 1:
+                view_id = 5
+              elif camera_id == 3:
+                view_id = 3
+
+            elif replication_id == 2:
+              if camera_id == 2:
+                view_id = 2
+              elif camera_id == 1:
+                view_id = 4
+              elif camera_id == 3:
+                view_id = 1
+
+            action_id = int(videoname[17:20])
+            setup_id = int(videoname[1:4])
+            subject_id = int(videoname[9:12])
+            
+            ActionClasses[action_id-1] += seq_size
+            Subjects[subject_id-1] += seq_size
+            ViewIDs[view_id-1] += seq_size
+            CamIDs[camera_id-1] += seq_size
+            #######
+    
       else: # test set
         if int(videoname[9:12]) not in [1,2,4,5,8,9,13,14,15,16,17,18,19,25,27,28,31,34,35,38]:
             # 16,560 samples
@@ -146,10 +185,53 @@ class NTURGBDwithFlow(Dataset):
             seq_size = (length-(length%self.target_length))//self.target_length
             for f in range(1,seq_size+1):
                 self.videonames_sequences.append(videoname+"F"+'{0:03d}'.format(f))
+                
+                
+            ######## Class balance check
+            camera_id = int(videoname[5:8])
+            replication_id = int(videoname[13:16])
+
+            #   Based on camera id and replication id, calculate view id for view 
+            # classification. 
+            # 1: front view, 2: left view (90 deg), 3: right view (90 deg), 
+            # 4: left view (45 deg), 5: right view (45 deg)
+            if replication_id == 1:
+              if camera_id == 2:
+                view_id = 1
+              elif camera_id == 1:
+                view_id = 5
+              elif camera_id == 3:
+                view_id = 3
+
+            elif replication_id == 2:
+              if camera_id == 2:
+                view_id = 2
+              elif camera_id == 1:
+                view_id = 4
+              elif camera_id == 3:
+                view_id = 1
+
+            action_id = int(videoname[17:20])
+            setup_id = int(videoname[1:4])
+            subject_id = int(videoname[9:12])
+            
+            ActionClasses[action_id-1] += seq_size
+            Subjects[subject_id-1] += seq_size
+            ViewIDs[view_id-1] += seq_size
+            CamIDs[camera_id-1] += seq_size
+            #######
     
     self.videonames = sorted(self.videonames)
     self.videonames_sequences = sorted(self.videonames_sequences)
     
+    '''
+    print('-------------------------------------',self.subset)            
+    print("ActionClasses=\n",ActionClasses*100./np.sum(ActionClasses))
+    print("Subjects=\n",Subjects*100./np.sum(Subjects))
+    print("ViewIDs=",ViewIDs*100./np.sum(ViewIDs))
+    print("CamIDs=",CamIDs*100./np.sum(CamIDs))
+    print('----------------------------------------------------------------')
+    '''
     
     #print("total videos------------------------",len(self.videonames))
     #print("total new stuff------------------------",len(self.videonames_sequences))
