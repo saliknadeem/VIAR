@@ -11,6 +11,11 @@ from torch import optim, nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+
+from networks import ViewClassifier
+from functools import reduce
+import operator
+
 from tensorboardX import SummaryWriter # tensorboard for any library
 
 import sklearn.metrics as skm
@@ -259,7 +264,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
   criterions['view_accuracy'] = nn.Softmax(dim=None)
   criterions['actionclassify'] = nn.CrossEntropyLoss(size_average=False, reduce=True)
   criterions['action_accuracy'] = nn.Softmax(dim=None)
-    
+
   n_iters = math.ceil(n_epoch * len(train_dataset) / args.batch_size)
 
   epoch_start, iter = 1, 1
@@ -278,6 +283,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     writer.add_text('Command line', cmdline, iter)
 
   for epoch_num in range(epoch_start, n_epoch + 1):
+    
     for batch_ind, sample in enumerate(train_loader):
       #print("chefininsdinsidnsidni")
       train_result = run(target_modules=target_modules,
@@ -298,7 +304,23 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
           unique_name, epoch_num, iter, timeSince(start, iter / n_iters)
           ) )
       # iteration += 1 for every sample
+      
+      
+      if iter % 20000 == 0:
+        args.learning_rate = args.learning_rate/2.
+        for m in target_modules:
+            optimizers[m] = optim.Adam(models[m].parameters(), 
+                               lr=args.learning_rate, weight_decay=5e-4)
+      """  
+      if iter == 5000:
+        args.disable_grl = False
+        models['viewclassifier'] = ViewClassifier(
+            input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
+            num_classes=5,
+            reverse=(not args.disable_grl)).to(device)
+      """
       iter += 1
+        
 
       if args.val_every_iter is not None:
         if (args.val_every_iter < len(train_dataset)) and ((iter-1) % args.val_every_iter == 0):
