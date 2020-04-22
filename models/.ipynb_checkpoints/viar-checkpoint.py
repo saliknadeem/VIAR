@@ -284,13 +284,13 @@ def run(split, sample, models, target_modules=[], device='cuda',
     total_loss += (crossview_loss + 0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
     
     
+    """ Code to see accuracy """
     accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
     viewclassify_max_idx = torch.argmax(accuracy_out, 2, keepdim=False)
     view_IDs = torch.argmax(sample['view_id'], -1, keepdim=False)
     true_preds = [view_IDs[i].repeat(viewclassify_max_idx.shape[-1]) for i in range(viewclassify_max_idx.shape[0])]
     correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
     view_accuracy += 100. * correct
-    
     
     if set_grad and total_loss != 0:
       total_loss.backward()
@@ -352,10 +352,10 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
   actionclassify_output = models['actionclassifier'](
     encoder_output.view(batch_size*target_length,-1) 
     )
+  #print("actionclassify_output=",actionclassify_output.shape,"\n")
   actionclassify_output = actionclassify_output.view(
     (batch_size, target_length) + (models['actionclassifier'].num_classes,) )
-    
-    
+  #print("actionclassify_output=",actionclassify_output.shape,"\n")
 
   if split in ['train', 'validate']:
     if set_grad:
@@ -367,25 +367,43 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     action_accuracy = 0
     action_loss = 0
     correct_action = 0
+    actionclassify_mean = 0
+
+      
+    #actionclassify_output = torch.autograd.Variable(torch.mean(actionclassify_output, 1, True).repeat(1, target_length, 1) ,requires_grad=True)
+    actionclassify_output = actionclassify_output.mean(1)
+    
+    #print("actionclassify_output=",actionclassify_output.shape) # ([16, 6, 60])
+    #print("actionclassify_output=",actionclassify_output)
+    #print("actionclassify_output=",actionclassify_output.shape,"\n",actionclassify_output)
+      
+    #print("actionclassify_output=",actionclassify_output.shape,"\n",actionclassify_output)
+    #actionclassify_output.data = actionclassify_output.data.repeat(1, target_length, 1) # ([16, 6, 60])
+    #print("actionclassify_output=",actionclassify_output.shape)#,"\n",actionclassify_output)
+
+    action_loss = criterions['actionclassify'](actionclassify_output, sample['action_label'].to(device))
+    #print("action_loss=",action_loss.shape,action_loss)
 
     
-    #print("actionclassify_output=",actionclassify_output.shape) ([16, 6, 60])
-    action_loss = criterions['actionclassify'](actionclassify_output, sample['action_label'].long().to(device))
+    #action_loss.register_hook(lambda grad: print(grad))
+
 
     action_accuracy = criterions['action_accuracy'](actionclassify_output.to(device))
-    #print("action_accuracy=",action_accuracy.shape)  # ([16, 6, 60]) # batch, targlen, classes
+    #print("action_accuracy=",action_accuracy.shape)  # ([16, 6, 60]) # batch, targlen, classes [16,60]
     
+    #print("sample['action_label']\n",sample['action_label'].shape)
     
+    #print("action_accuracy=",action_accuracy.shape,"\n",action_accuracy)
     ##############
-    action_acc_mean_T = action_accuracy.mean(1)
-    #print("action_acc_mean_T=",action_acc_mean_T.shape) # ([16, 60])
+    #action_acc_mean_T = action_accuracy.mean(1)
+    #print("action_acc_mean_T=",action_acc_mean_T.shape,"\n",action_acc_mean_T) # ([16, 60])
     ##############
     
     
-    actionclassify_max_idx = torch.argmax(action_acc_mean_T, 1, keepdim=False) #2, keepdim=False)
+    actionclassify_max_idx = torch.argmax(action_accuracy, 1, keepdim=False) #2, keepdim=False)
     #print("actionclassify_max_idx=",actionclassify_max_idx.shape,actionclassify_max_idx) # ([16])
     
-    action_IDs = torch.argmax(sample['action_label'], -1, keepdim=False)
+    action_IDs = sample['action_label']
     #print("            action_IDs=",action_IDs.shape, action_IDs) # ([16])
     
     #action_true_preds = [action_IDs[i].repeat(actionclassify_max_idx.shape[-1]) for i in range(actionclassify_max_idx.shape[0])]
@@ -396,10 +414,9 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     #print("correct_action=",correct_action.shape,correct_action) 
     
     action_accuracy = 100. * correct_action
+ 
     
-    print("==========================================================  action_loss",action_loss.item(),", action_accuracy=",action_accuracy.item())
-    
-
+    print("================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
     
     if set_grad and action_loss != 0:
       action_loss.backward()

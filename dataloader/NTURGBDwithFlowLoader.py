@@ -481,12 +481,22 @@ class NTURGBDwithFlow(Dataset):
     action_label = videoname[17:].strip("0")
     
     # action_label to categorical one-hot vector
-    action_label = np.eye(60, dtype='bool')[int(action_label)-1].astype(int) # 60 for 60 action classes, action_label-1 for number to index
+    #action_label = np.eye(60, dtype='bool')[int(action_label)-1].astype(int) # 60 for 60 action classes, action_label-1 for number to index
+    action_label = int(action_label)
+    
+    #print("action_label=",action_label.shape,"\n")
+    
+    #action_label = action_label.reshape([1,-1]) # ([16, 1, 60])
+    #print("action_label=",action_label.shape,"\n")
+    #action_label = action_label.repeat(self.target_length, 1) # ([16, 6, 60])
+    #print("action_label=",action_label.shape,"\n")
+    
+    
     
     #print("-------view_id--------",view_id)
     #print("video=",videoname,"\n-------action_label--------",action_label)
     #print("-------torch.Tensor(view_id)--------",torch.Tensor(view_id))
-   # exit()
+ 
     
     sample = {'action_id': action_id,
               'camera_id': camera_id,

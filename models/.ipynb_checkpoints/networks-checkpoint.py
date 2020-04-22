@@ -279,7 +279,7 @@ class ViewClassifier(nn.Module):
 
 class ActionClassifier(nn.Module):
   def __init__(self, input_size, num_classes):
-    super(ViewClassifier, self).__init__()
+    super(ActionClassifier, self).__init__()
     self.num_classes = num_classes
     
     # Gradient Reversal Layer with two 
