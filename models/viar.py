@@ -270,7 +270,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
       if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad() #actionaction needed
     
     total_loss = 0
-    view_accuracy = 0 #skl
+    #view_accuracy = 0 #skl
     correct=0
     
     
@@ -285,12 +285,14 @@ def run(split, sample, models, target_modules=[], device='cuda',
     
     
     """ Code to see accuracy """
+    """
     accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
     viewclassify_max_idx = torch.argmax(accuracy_out, 2, keepdim=False)
     view_IDs = torch.argmax(sample['view_id'], -1, keepdim=False)
     true_preds = [view_IDs[i].repeat(viewclassify_max_idx.shape[-1]) for i in range(viewclassify_max_idx.shape[0])]
     correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
     view_accuracy += 100. * correct
+    """
     
     if set_grad and total_loss != 0:
       total_loss.backward()
@@ -305,7 +307,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
     result['logs']['crossview_loss'] = crossview_loss.item() if crossview_loss > 0 else 0
     result['logs']['reconstruct_loss'] = reconstruct_loss.item() if reconstruct_loss > 0 else 0
     result['logs']['viewclassify_loss'] = viewclassify_loss.item() if viewclassify_loss > 0 else 0
-    result['logs']['viewclassify_accuracy'] = view_accuracy.item() if view_accuracy > 0 else 0
+    #result['logs']['viewclassify_accuracy'] = view_accuracy.item() if view_accuracy > 0 else 0
 
   return result
 
@@ -371,7 +373,9 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
 
       
     #actionclassify_output = torch.autograd.Variable(torch.mean(actionclassify_output, 1, True).repeat(1, target_length, 1) ,requires_grad=True)
+    
     actionclassify_output = actionclassify_output.mean(1)
+
     
     #print("actionclassify_output=",actionclassify_output.shape) # ([16, 6, 60])
     #print("actionclassify_output=",actionclassify_output)
@@ -416,7 +420,7 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     action_accuracy = 100. * correct_action
  
     
-    print("================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
+    print("=====================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
     
     if set_grad and action_loss != 0:
       action_loss.backward()
@@ -467,7 +471,7 @@ def get_args():
   parser.add_argument('--unique-name', dest='unique_name',
     default=None, help='Uniquely names directory within save_dir')
   parser.add_argument('--output-dir', dest='output_dir',
-    default='./', help='Output directory for outputs, e.g. extracted features.')
+    default='./VIAR/features', help='Output directory for outputs, e.g. extracted features.')
 
   # Networks
   parser.add_argument('--encoder-cnn-model', dest='encoder_cnn_model',
@@ -484,6 +488,8 @@ def get_args():
     type=int, default=1, help='Input minibatch size')
   parser.add_argument('--learning-rate', dest='learning_rate',
     type=float, default=1e-5, help='Learning rate for training')
+  parser.add_argument('--learning-rate-decay', dest='learning_rate_decay',
+    type=float, default=50000, help='Learning rate decay for training')
   parser.add_argument('--val-every-iter', dest='val_every_iter',
     type=int, default=None, 
     help='Run validation every val_every_iter iterations. If None, validation '

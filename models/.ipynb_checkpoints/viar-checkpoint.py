@@ -371,7 +371,9 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
 
       
     #actionclassify_output = torch.autograd.Variable(torch.mean(actionclassify_output, 1, True).repeat(1, target_length, 1) ,requires_grad=True)
+    
     actionclassify_output = actionclassify_output.mean(1)
+
     
     #print("actionclassify_output=",actionclassify_output.shape) # ([16, 6, 60])
     #print("actionclassify_output=",actionclassify_output)
@@ -416,7 +418,7 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     action_accuracy = 100. * correct_action
  
     
-    print("================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
+    print("=====================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
     
     if set_grad and action_loss != 0:
       action_loss.backward()
@@ -467,7 +469,7 @@ def get_args():
   parser.add_argument('--unique-name', dest='unique_name',
     default=None, help='Uniquely names directory within save_dir')
   parser.add_argument('--output-dir', dest='output_dir',
-    default='./', help='Output directory for outputs, e.g. extracted features.')
+    default='./VIAR/features', help='Output directory for outputs, e.g. extracted features.')
 
   # Networks
   parser.add_argument('--encoder-cnn-model', dest='encoder_cnn_model',
@@ -484,6 +486,8 @@ def get_args():
     type=int, default=1, help='Input minibatch size')
   parser.add_argument('--learning-rate', dest='learning_rate',
     type=float, default=1e-5, help='Learning rate for training')
+  parser.add_argument('--learning-rate-decay', dest='learning_rate_decay',
+    type=float, default=50000, help='Learning rate decay for training')
   parser.add_argument('--val-every-iter', dest='val_every_iter',
     type=int, default=None, 
     help='Run validation every val_every_iter iterations. If None, validation '

@@ -13,10 +13,7 @@ import collections
 import numpy as np
 from PIL import Image
 
-
 import cv2
-import skimage.measure
-
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -125,7 +122,7 @@ class NTURGBDwithFlow(Dataset):
       if self.subset == 'all':
         self.videonames.append(videoname)
         
-        length = self.meta['framelength'][videoname]-5
+        length = self.meta['framelength'][videoname]-6
         #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
         seq_size = (length-(length%self.target_length))//self.target_length
         for f in range(1,seq_size+1):
@@ -133,11 +130,11 @@ class NTURGBDwithFlow(Dataset):
 
         
       elif self.subset == 'train':
-        if int(videoname[9:12]) in [1,2,4,5,8,9,13,14,15,16,17,18,19,25,27,28,31,34,35,38]:
+        if int(videoname[5:8]) in [2,3]:
             # Cross-Subject Evalutation subjects (perferomers id), 40,320 samples
             self.videonames.append(videoname)
             
-            length = self.meta['framelength'][videoname]-5
+            length = self.meta['framelength'][videoname]-6
             
             #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
             seq_size = (length-(length%self.target_length))//self.target_length
@@ -179,11 +176,11 @@ class NTURGBDwithFlow(Dataset):
             #######
     
       else: # test set
-        if int(videoname[9:12]) not in [1,2,4,5,8,9,13,14,15,16,17,18,19,25,27,28,31,34,35,38]:
+        if int(videoname[5:8]) not in [2,3]:
             # 16,560 samples
             self.videonames.append(videoname)
             
-            length = self.meta['framelength'][videoname]-5
+            length = self.meta['framelength'][videoname]-6
             #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
             seq_size = (length-(length%self.target_length))//self.target_length
             for f in range(1,seq_size+1):
@@ -227,18 +224,18 @@ class NTURGBDwithFlow(Dataset):
     self.videonames = sorted(self.videonames)
     self.videonames_sequences = sorted(self.videonames_sequences)
     
-    '''
+
     print('-------------------------------------',self.subset)            
     print("ActionClasses=\n",ActionClasses*100./np.sum(ActionClasses))
     print("Subjects=\n",Subjects*100./np.sum(Subjects))
     print("ViewIDs=",ViewIDs*100./np.sum(ViewIDs))
     print("CamIDs=",CamIDs*100./np.sum(CamIDs))
     print('----------------------------------------------------------------')
-    '''
+
     
-    #print("total videos------------------------",len(self.videonames))
-    #print("total new stuff------------------------",len(self.videonames_sequences))
-    #exit()
+    print("total videos------------------------",len(self.videonames))
+    print("total new stuff------------------------",len(self.videonames_sequences))
+    exit()
     
     if self.visual_transform is None:
       self.rgb_transform = transforms.Compose([
@@ -347,23 +344,19 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------depths------------", depths.size())
 
-    
-
 
     flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
     for f in flow_h5['flow'][frame_indices]:
       flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
-      #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
       flow = np.transpose(flow, (2,0,1))
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
     
     #print("-------------flows------------", flows.size())
-    
-    
+
     #############################################print("=================actual={}/{}==={}===".format(frame_indices,length,videoname),idx )
     
     camera_id = int(videoname[5:8])
@@ -479,12 +472,11 @@ class NTURGBDwithFlow(Dataset):
     
     
     ##print("-------------otherview_depths------------", otherview_depths.size())   
-    #print("-------------otherview_flows------------", otherview_flows.size())
+    ##print("-------------otherview_flows------------", otherview_flows.size())
     ##print("-------------otherview_depths------------", otherview_depths[0:6,:,:,:].size())   
     ##print("-------------otherview_flows------------", otherview_flows[6:,:,:,:].size())
     ##exit()
 
-    #exit()
     
     action_label = videoname[17:].strip("0")
     
@@ -532,8 +524,6 @@ def cropND(img, bounding):
     end = tuple(map(operator.add, start, bounding))
     slices = tuple(map(slice, start, end))
     return img[slices]
-
-
 
 def NTURGBDwithFlowLoader(
     json_file, 

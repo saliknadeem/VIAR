@@ -159,6 +159,7 @@ def makeUniquePath(save_dir='./VIAR', log_prefix='VIAR', unique_name=None):
 
 def testIters(run, test_loader, test_dataset, models={}, checkpoint_files={}, 
               args=None, device='cuda'):
+  args.output_dir = args.save_dir+"/features"
   if len(models) < 1:
     raise ValueError('No model is given for testing. Check if models parameter'
                      ' is properly set for testIters.')
@@ -172,7 +173,7 @@ def testIters(run, test_loader, test_dataset, models={}, checkpoint_files={},
     os.makedirs(os.path.join(args.output_dir))
 
   loadCheckpoints(models, [], {}, checkpoint_files)
-
+  
   print('Test ongoing...')
   out_h5_path = os.path.join(args.output_dir, 'VIAR_encoder_outputs.h5')
   out_h5 = h5py.File(out_h5_path)
@@ -306,19 +307,23 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
       # iteration += 1 for every sample
       
       
-      if iter % 20000 == 0:
+      if iter % args.learning_rate_decay == 0:
         args.learning_rate = args.learning_rate/2.
         for m in target_modules:
+            #if m == 'encoder':
+            #    optimizers[m] = optim.Adam(models[m].parameters(), 
+            #                   lr=1e-5, weight_decay=5e-4)
+            #else:
             optimizers[m] = optim.Adam(models[m].parameters(), 
                                lr=args.learning_rate, weight_decay=5e-4)
-      """  
+ 
       if iter == 5000:
         args.disable_grl = False
         models['viewclassifier'] = ViewClassifier(
             input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
             num_classes=5,
             reverse=(not args.disable_grl)).to(device)
-      """
+
       iter += 1
         
 

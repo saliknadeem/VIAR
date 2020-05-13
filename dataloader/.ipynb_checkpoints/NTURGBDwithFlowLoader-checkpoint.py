@@ -13,7 +13,10 @@ import collections
 import numpy as np
 from PIL import Image
 
+
 import cv2
+import skimage.measure
+
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -122,7 +125,7 @@ class NTURGBDwithFlow(Dataset):
       if self.subset == 'all':
         self.videonames.append(videoname)
         
-        length = self.meta['framelength'][videoname]-6
+        length = self.meta['framelength'][videoname]-5
         #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
         seq_size = (length-(length%self.target_length))//self.target_length
         for f in range(1,seq_size+1):
@@ -134,7 +137,7 @@ class NTURGBDwithFlow(Dataset):
             # Cross-Subject Evalutation subjects (perferomers id), 40,320 samples
             self.videonames.append(videoname)
             
-            length = self.meta['framelength'][videoname]-6
+            length = self.meta['framelength'][videoname]-5
             
             #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
             seq_size = (length-(length%self.target_length))//self.target_length
@@ -180,7 +183,7 @@ class NTURGBDwithFlow(Dataset):
             # 16,560 samples
             self.videonames.append(videoname)
             
-            length = self.meta['framelength'][videoname]-6
+            length = self.meta['framelength'][videoname]-5
             #seq_list = list (range(1, (length-(length%self.target_length))//self.target_length+1))
             seq_size = (length-(length%self.target_length))//self.target_length
             for f in range(1,seq_size+1):
@@ -344,19 +347,23 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------depths------------", depths.size())
 
+    
+
 
     flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
     for f in flow_h5['flow'][frame_indices]:
       flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
       flow = np.transpose(flow, (2,0,1))
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
     
     #print("-------------flows------------", flows.size())
-
+    
+    
     #############################################print("=================actual={}/{}==={}===".format(frame_indices,length,videoname),idx )
     
     camera_id = int(videoname[5:8])
@@ -472,11 +479,12 @@ class NTURGBDwithFlow(Dataset):
     
     
     ##print("-------------otherview_depths------------", otherview_depths.size())   
-    ##print("-------------otherview_flows------------", otherview_flows.size())
+    #print("-------------otherview_flows------------", otherview_flows.size())
     ##print("-------------otherview_depths------------", otherview_depths[0:6,:,:,:].size())   
     ##print("-------------otherview_flows------------", otherview_flows[6:,:,:,:].size())
     ##exit()
 
+    #exit()
     
     action_label = videoname[17:].strip("0")
     
@@ -524,6 +532,8 @@ def cropND(img, bounding):
     end = tuple(map(operator.add, start, bounding))
     slices = tuple(map(slice, start, end))
     return img[slices]
+
+
 
 def NTURGBDwithFlowLoader(
     json_file, 
