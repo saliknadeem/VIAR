@@ -266,34 +266,15 @@ class NTURGBDwithFlow(Dataset):
     #return len(self.videonames)
 
   def __getitem__(self, idx):
-    
-    ####print ('-------------------------------------------',idx)
-    
-    
+
     videoname_sequence = self.videonames_sequences[idx]
     videoname = videoname_sequence[0:20]
     
-    #print("videoname------------------------",videoname)
-    #print("videoname_seq--------------------",videoname_sequence)
-    
     frame_segment = int(videoname_sequence[21:])
-    #print("frame_segment--------------------",str(frame_segment))
-    
-    #########print("total___frame--------------------",self.meta['framelength'][videoname])
-    #########print("framesssssssssss--------------------", list(range( (frame_segment*self.target_length)-self.target_length, (frame_segment*self.target_length))) )
-    
-
-    
-    ####print("*************Videoname**********",videoname)
-    ####print([db_item == videoname for db_item in self.meta['framelength']])
-    ####print("!!!!!!!!!!!!!!!!!!!self meta size: ",self.meta['framelength'][videoname])
-    
-    
     length = self.meta['framelength'][videoname]
     
     ##cropped_length = (length - (length % self.target_length) )
     ##frame_indices = list (range(cropped_length))
-    
     frame_indices = list(range( (frame_segment*self.target_length)-self.target_length, (frame_segment*self.target_length)))
     
     
@@ -505,6 +486,22 @@ class NTURGBDwithFlow(Dataset):
     #print("video=",videoname,"\n-------action_label--------",action_label)
     #print("-------torch.Tensor(view_id)--------",torch.Tensor(view_id))
  
+    
+    
+    print("-------------videoname------------", videoname)
+    print("-------------RGB------------", rgb.size())
+    print("-------------RGBs------------", rgbs.size())
+    print("-------------depths------------", depths.size())
+    print("-------------flows------------", flows.size())
+    print("-------------otherview_depths------------", otherview_depths[0:60,:,:,:].size())
+    print("-------------otherview_flows------------", otherview_depths[0:60,:,:,:].size())
+    print("-------------otherview_depths2------------", otherview_depths[60:,:,:,:].size())
+    print("-------------otherview_flows2------------", otherview_depths[60:,:,:,:].size())
+    print("-------------action_label------------", action_label)
+    
+    
+    
+    
     
     sample = {'action_id': action_id,
               'camera_id': camera_id,

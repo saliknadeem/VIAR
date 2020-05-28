@@ -81,7 +81,7 @@ class Encoder(nn.Module):
         in_channels=self.input_shape[0],  # Corresponds to input size
         out_channels=self.hidden_size,  # Corresponds to hidden size
         kernel_size=7,  # Int or List[int]
-        num_layers=1,
+        num_layers=12, #### skl it was 1
         bidirectional=True,
         #dilation=2, stride=2, dropout=0.2,
         #dropout=0.1,

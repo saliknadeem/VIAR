@@ -255,6 +255,10 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
   # optimizers and criterions
   optimizers = {}
   for m in target_modules:
+    #if m == 'encoder':
+    #    optimizers[m] = optim.Adam(models[m].parameters(), 
+    #                           lr=1e-5, weight_decay=5e-4)
+    #else:
     optimizers[m] = optim.Adam(models[m].parameters(), 
                                lr=args.learning_rate, weight_decay=5e-4)
 
