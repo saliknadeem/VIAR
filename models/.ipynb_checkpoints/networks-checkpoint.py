@@ -16,6 +16,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torchvision
 
 import ConvolutionalRNN
+import convLSTM
 from RevGrad import RevGrad
 
 class CNN(nn.Module):
@@ -24,16 +25,19 @@ class CNN(nn.Module):
     self.model_name = model_name
     self.out_size = None
 
-    # CNN
+    #CNN
     if self.model_name.startswith('resnet'):
       self.front_model = getattr(torchvision.models, self.model_name)(pretrained=False)
+      #print("-------input_shape",input_shape)
       if input_channel != 3:
         self.front_model.conv1 = nn.Conv2d(input_channel, 64, kernel_size=7, 
                                            stride=2, padding=3, bias=False)
+                                           #stride=2, padding=3, bias=False) #skl
         self.front_model.conv1.apply(self._init_weights)
+      #print('=================stuff===',*list(self.front_model.children())[:-2])
       self.front_model = nn.Sequential(*list(self.front_model.children())[:-2])
       last_conv_outsize = self._get_intermediate_outsize(input_shape, interrupt=1)
-
+      #print("---------last_conv_outsize",last_conv_outsize)
       # Add a 1 × 1 × 64 convolutional layer to reduce the feature size,
       # following [1]
       self.front_model = nn.Sequential(
@@ -46,7 +50,9 @@ class CNN(nn.Module):
 
   def forward(self, x, interrupt=0):
     if self.model_name.startswith('resnet'):
+      #print("x=====",x.shape)
       x = self.front_model( x )
+      #print("x=====",x.shape)
     if interrupt == 1: 
       # _get_intermediate_outsize
       return x
@@ -56,15 +62,20 @@ class CNN(nn.Module):
   def _init_weights(self, m):
     if type(m) == nn.Linear:
       nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-      m.bias.data.fill_(0.01)
+      m.bias.data.fill_(0.05)
+      #m.bias.data.fill_(0.01) #skl
     else:
       nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
   # generate input sample and forward to get output shape
   def _get_intermediate_outsize(self, input_shape, interrupt):
     input = Variable(torch.rand(1, *input_shape)) # 1 for batch_size
+    #print("====input",input.shape)
     output_feat = self.forward(input, interrupt=interrupt)
+    #print("====output_feat",output_feat.shape)
     n_size = output_feat.size()[1:]
+    #print("====n_size",n_size)
+    #exit()
     return n_size
 
 class Encoder(nn.Module):
@@ -81,9 +92,9 @@ class Encoder(nn.Module):
         in_channels=self.input_shape[0],  # Corresponds to input size
         out_channels=self.hidden_size,  # Corresponds to hidden size
         kernel_size=7,  # Int or List[int]
-        num_layers=2, #### skl it was 1
+        #num_layers=2, #stride=1, dropout=0.1, #### skl it was 1
         bidirectional=True,
-        #dilation=2, stride=2, dropout=0.2,
+        #dilation=2,stride=1, dropout=0.2,
         #dropout=0.1,
         batch_first=True
         )
@@ -101,7 +112,8 @@ class Encoder(nn.Module):
   def _init_weights(self, m):
     if type(m) == nn.Linear:
       nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-      m.bias.data.fill_(0.01)
+      m.bias.data.fill_(0.05)
+      #m.bias.data.fill_(0.01)
     elif type(m) == ConvolutionalRNN.Conv2dLSTM:
       for weight in m.parameters():
         nn.init.kaiming_normal_(weight, mode='fan_out', nonlinearity='relu')
@@ -134,6 +146,10 @@ class Encoder(nn.Module):
     n_size = output_feat.size()[1:]
     return n_size
 
+
+
+
+##########################################################
 
 
 '''
@@ -181,6 +197,9 @@ class EncoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 ########################################################
+
+
+
 '''
 
 
@@ -194,20 +213,21 @@ class CrossViewDecoder(nn.Module):
     self.deconv2d_1 = nn.ConvTranspose2d(
       in_channels=self.input_shape[0], out_channels=80, kernel_size=3, 
       stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1)
+      #stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1) #skl
     self.deconv2d_1_bn = nn.BatchNorm2d(80)
 
     self.deconv2d_2 = nn.ConvTranspose2d(
-      in_channels=80, out_channels=36, kernel_size=5, 
+      in_channels=80, out_channels=40, kernel_size=5, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
-    self.deconv2d_2_bn = nn.BatchNorm2d(36)
+    self.deconv2d_2_bn = nn.BatchNorm2d(40) #skl 36
 
     self.deconv2d_3 = nn.ConvTranspose2d(
-      in_channels=36, out_channels=17, kernel_size=5, 
+      in_channels=40, out_channels=20, kernel_size=5, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
-    self.deconv2d_3_bn = nn.BatchNorm2d(17)
+    self.deconv2d_3_bn = nn.BatchNorm2d(20) #skl 17
 
     self.deconv2d_4 = nn.ConvTranspose2d(
-      in_channels=17, out_channels=3, kernel_size=5, 
+      in_channels=20, out_channels=3, kernel_size=5, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
 
     # indicate out_size according to what you are going to do

@@ -72,6 +72,9 @@ def build_models(args, device='cuda'):
   elif args.modality == 'depth':
       models['encodercnn'] = CNN(
         input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model,input_channel=1).to(device)  
+  elif args.modality == 'pdflow':
+      models['encodercnn'] = CNN(
+        input_shape=FLOW_SHAPE, model_name=args.encoder_cnn_model,input_channel=3).to(device) 
 
   models['encoder'] = Encoder(
     input_shape=models['encodercnn'].out_size, encoder_block='convbilstm', 
@@ -232,20 +235,23 @@ def run(split, sample, models, target_modules=[], device='cuda',
         (batch_size*target_length,) + DEPTH_INPUT_SHAPE
         ).to(device)
       encodercnn_output = models['encodercnn'](depth_input)
+  elif args.modality == 'pdflow':
+      pdflow_input = sample['flows'].view(
+        (batch_size*target_length,) + FLOW_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](pdflow_input)
     
-    
-    
-  print("-------encoderCNNout=",encodercnn_output.shape)
+  #print("-------encoderCNNout=",encodercnn_output.shape)
   encodercnn_output = encodercnn_output.view(
     (batch_size, target_length) + models['encodercnn'].out_size )
-  print("-------encoderCNNout=",encodercnn_output.shape)
+  #print("-------encoderCNNout=",encodercnn_output.shape)
   encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
-  print("-------encoderout=",encoder_output.shape)
+  #print("-------encoderout=",encoder_output.shape)
     
-  print("-------encoderout=",encoder_output.contiguous().view(
-    (batch_size*target_length,) + models['encoder'].out_size[1:] ).shape)
+  #print("-------encoderout=",encoder_output.contiguous().view(
+  #  (batch_size*target_length,) + models['encoder'].out_size[1:] ).shape)
    
-  exit()
+  #exit()
   if split == 'test':
     result['output']['encoder_output'] = encoder_output
   encoder_output = encoder_output.contiguous().view(
@@ -357,7 +363,7 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     for m in models:
       models[m].eval()
 
-
+  #print("----------------args.modality",args.modality)
   # Encoder
   if args.modality == 'rgb':
       rgb_input = sample['rgbs'].view(
@@ -369,7 +375,11 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
         (batch_size*target_length,) + DEPTH_INPUT_SHAPE
         ).to(device)
       encodercnn_output = models['encodercnn'](depth_input)
-    
+  elif args.modality == 'pdflow':
+      pdflow_input = sample['flows'].view(
+        (batch_size*target_length,) + FLOW_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](pdflow_input)    
     
   encodercnn_output = encodercnn_output.view(
     (batch_size, target_length) + models['encodercnn'].out_size )
@@ -497,7 +507,7 @@ def get_args():
   
   # Input Modality
   parser.add_argument('--modality', dest='modality', 
-    default='rgb', help='RGB,Depth')
+    default='rgb', help='RGB,Depth,PDFlow')
     
 
   # What To Do

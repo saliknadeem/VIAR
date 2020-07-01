@@ -260,7 +260,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     #                           lr=1e-5, weight_decay=5e-4)
     #else:
     optimizers[m] = optim.Adam(models[m].parameters(), 
-                               lr=args.learning_rate, weight_decay=5e-4)
+                               lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
 
   criterions = {}
   criterions['crossview'] = nn.MSELoss(size_average=False, reduce=True)
@@ -319,9 +319,9 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
             #                   lr=1e-5, weight_decay=5e-4)
             #else:
             optimizers[m] = optim.Adam(models[m].parameters(), 
-                               lr=args.learning_rate, weight_decay=5e-4)
+                               lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
  
-      if iter == 5000:
+      if iter == 2500: #skl
         args.disable_grl = False
         models['viewclassifier'] = ViewClassifier(
             input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
