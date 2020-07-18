@@ -7,7 +7,7 @@ View-invariant Action Representations.," NeurIPS, 2018.
 import os
 import sys
 import numpy as np
-
+import math
 import json
 import time
 import argparse
@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 
 from networks import CNN, Encoder, CrossViewDecoder, \
-                     ReconstructionDecoder, ViewClassifier, ActionClassifier
+                     ReconstructionDecoder, ViewClassifier, ActionClassifier, MultiTaskLossWrapper
 
 sys.path.append('..')
 #from dataloader.NTURGBDwithFlowLoader import NTURGBDwithFlowLoader
@@ -27,9 +27,10 @@ from utils.utils import setCheckpointFileDict, testIters, trainIters
 
 RGB_INPUT_SHAPE = (3,224,224)
 DEPTH_INPUT_SHAPE = (1,224,224)
+RGBD_INPUT_SHAPE = (4,224,224)
 FLOW_SHAPE = (3,28,28)
 ALL_MODELS = ['encodercnn', 'encoder','crossviewdecoder','crossviewdecodercnn',
-              'reconstructiondecoder','viewclassifier', 'actionclassifier']
+              'reconstructiondecoder','viewclassifier', 'actionclassifier', 'multitasklosswrapper']
 LOG_PREFIX = 'VIAR'
 
 def main():
@@ -65,20 +66,28 @@ def main():
 
 def build_models(args, device='cuda'):
   models = {}
-  
+  from torchsummary import summary
+
   if args.modality == 'rgb':
       models['encodercnn'] = CNN(
         input_shape=RGB_INPUT_SHAPE, model_name=args.encoder_cnn_model,input_channel=3).to(device)
   elif args.modality == 'depth':
       models['encodercnn'] = CNN(
         input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model,input_channel=1).to(device)  
+  elif args.modality == 'rgbd':
+      models['encodercnn'] = CNN(
+        input_shape=RGBD_INPUT_SHAPE, model_name=args.encoder_cnn_model,input_channel=4).to(device) 
   elif args.modality == 'pdflow':
       models['encodercnn'] = CNN(
         input_shape=FLOW_SHAPE, model_name=args.encoder_cnn_model,input_channel=3).to(device) 
+  
+  
+  ##################print(summary(models['encodercnn'], (1, 224, 224)))
 
   models['encoder'] = Encoder(
-    input_shape=models['encodercnn'].out_size, encoder_block='convbilstm', 
+    input_shape=models['encodercnn'].out_size, encoder_block='convbilstm', #encoder_block='convbilstm',  #skl
     hidden_size=args.encoder_hid_size).to(device)
+
 
   models['crossviewdecodercnn'] = CNN(
     input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model, 
@@ -101,6 +110,8 @@ def build_models(args, device='cuda'):
   models['actionclassifier'] = ActionClassifier(
     input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
     num_classes=60).to(device)
+
+  models['multitasklosswrapper'] = MultiTaskLossWrapper(4,models).to(device)
 
   return models
 
@@ -235,6 +246,16 @@ def run(split, sample, models, target_modules=[], device='cuda',
         (batch_size*target_length,) + DEPTH_INPUT_SHAPE
         ).to(device)
       encodercnn_output = models['encodercnn'](depth_input)
+  elif args.modality == 'rgbd':
+      #print("sample['depths']===",sample['depths'].shape)
+      #print("sample['rgbs']===",sample['rgbs'].shape)
+      rgbd = torch.cat((sample['rgbs'], sample['depths']), 2)
+      #print("combined===",rgbd.shape)        
+      #exit()
+      rgbd_input = rgbd.view(
+        (batch_size*target_length,) + RGBD_INPUT_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](rgbd_input)
   elif args.modality == 'pdflow':
       pdflow_input = sample['flows'].view(
         (batch_size*target_length,) + FLOW_SHAPE
@@ -246,6 +267,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
     (batch_size, target_length) + models['encodercnn'].out_size )
   #print("-------encoderCNNout=",encodercnn_output.shape)
   encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
+  
   #print("-------encoderout=",encoder_output.shape)
     
   #print("-------encoderout=",encoder_output.contiguous().view(
@@ -257,22 +279,28 @@ def run(split, sample, models, target_modules=[], device='cuda',
   encoder_output = encoder_output.contiguous().view(
     (batch_size*target_length,) + models['encoder'].out_size[1:] )
 
+
+
+
   # CrossViewDecoder
   otherview_depth_input = sample['otherview_depths'].view(
     (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
   otherview2_depth_input = sample['otherview2_depths'].view(
     (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device) #skl
-    
+
   crossviewcnn_output = models['crossviewdecodercnn'](otherview_depth_input)
   crossviewcnn_output2 = models['crossviewdecodercnn'](otherview2_depth_input) #skl
+  #print('crossviewcnn_output======',crossviewcnn_output.shape)
+  #print('encoder_output======',encoder_output.shape)
+
   crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
   crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
   crossview_output = crossview_output.view(
     (batch_size, target_length) + models['crossviewdecoder'].out_size )
   crossview_output2 = crossview_output2.view(
     (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
-  
-
+  #print('crossviewcnn_output======',crossviewcnn_output.shape)  
+  #exit()
 
   # ReconstructionDecoder
   reconstruct_output = models['reconstructiondecoder'](encoder_output)
@@ -284,10 +312,13 @@ def run(split, sample, models, target_modules=[], device='cuda',
   viewclassify_output = models['viewclassifier'](
     encoder_output.view(batch_size*target_length,-1) )
   viewclassify_output = viewclassify_output.view(
-    (batch_size, target_length) + (models['viewclassifier'].num_classes,) )
+    (batch_size, target_length) + (models['viewclassifier'].num_classes,) )  
+
+    
+    
+    
+  loss, log_vars = models['multitasklosswrapper'](sample, criterions, encoder_output)
   
-
-
   if split in ['train', 'validate']:
     if set_grad:
       if 'encodercnn' in target_modules: optimizers['encodercnn'].zero_grad()
@@ -296,12 +327,37 @@ def run(split, sample, models, target_modules=[], device='cuda',
       if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].zero_grad()
       if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].zero_grad()
       if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad() #actionaction needed
+      if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].zero_grad() #actionaction needed
+                
     
+    
+    
+    ####################################################################
+    ##################### MTL #########################################
+    '''
+    task_num = 4
+    log_vars = torch.zeros((task_num))
+    loss = 0
+    loss = torch.sum(torch.exp(-log_vars[0]).to(device) * (sample['otherview_flows'].to(device) - crossview_output) ** 2. + log_vars[0], -1).to(device)
+    loss += torch.sum(torch.exp(-log_vars[1]).to(device) * (sample['otherview2_flows'].to(device) - crossview_output2) ** 2. + log_vars[1], -1).to(device)
+    loss += torch.sum(torch.exp(-log_vars[2]).to(device) * (sample['flows'].to(device) - reconstruct_output) ** 2. + log_vars[2], -1).to(device)
+    loss += torch.sum(torch.exp(-log_vars[3]).to(device) * -math.log( criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device)) )  + log_vars[3], -1).to(device)
+    #loss += torch.sum(torch.exp(-log_vars[3]) * (sample['view_id'].long().to(device) - viewclassify_output) ** 2. + log_vars[3], -1)    
+    loss = torch.mean(loss).to(device)
+    
+    log_vars = log_vars.data.tolist()
+    '''
+    ##################################################################
+    
+
     total_loss = 0
     #view_accuracy = 0 #skl
     correct=0
     crossview_loss = 0
     
+    
+    #print('======crossview_output=====',crossview_output.shape)
+    #print('======sample[otherview_flows]=====',sample['otherview_flows'].shape)    
     
     crossview_loss1 = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
     crossview_loss2 = criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device))
@@ -310,7 +366,11 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
     reconstruct_loss = criterions['reconstruct'](reconstruct_output, sample['flows'].to(device))
     viewclassify_loss = criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device))
-    total_loss += (crossview_loss + 0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+    total_loss += (crossview_loss +  loss )   #   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+    
+
+    
+    
     
     
     """ Code to see accuracy """
@@ -323,19 +383,23 @@ def run(split, sample, models, target_modules=[], device='cuda',
     view_accuracy += 100. * correct
     """
     
-    if set_grad and total_loss != 0:
+    if set_grad: #and total_loss != 0:
       total_loss.backward()
+      #loss.backward(retain_graph=True)
+      #crossview_loss.backward()
       if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
       if 'encoder' in target_modules: optimizers['encoder'].step()
       if 'crossviewdecodercnn' in target_modules: optimizers['crossviewdecodercnn'].step()
       if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].step()
       if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].step()
       if 'viewclassifier' in target_modules: optimizers['viewclassifier'].step()
+      if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].step()        
 
-    result['logs']['loss'] = total_loss.item() if total_loss > 0 else 0
-    result['logs']['crossview_loss'] = crossview_loss.item() if crossview_loss > 0 else 0
-    result['logs']['reconstruct_loss'] = reconstruct_loss.item() if reconstruct_loss > 0 else 0
-    result['logs']['viewclassify_loss'] = viewclassify_loss.item() if viewclassify_loss > 0 else 0
+    result['logs']['loss'] = total_loss.item() #if total_loss > 0 else 0
+    #result['logs']['loss'] = loss.item() if loss > 0 else 0
+    result['logs']['crossview_loss'] = crossview_loss.item() #if crossview_loss > 0 else 0
+    result['logs']['reconstruct_loss'] = reconstruct_loss.item() #if reconstruct_loss > 0 else 0
+    result['logs']['viewclassify_loss'] = viewclassify_loss.item() #if viewclassify_loss > 0 else 0
     #result['logs']['viewclassify_accuracy'] = view_accuracy.item() if view_accuracy > 0 else 0
 
   return result
@@ -375,6 +439,16 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
         (batch_size*target_length,) + DEPTH_INPUT_SHAPE
         ).to(device)
       encodercnn_output = models['encodercnn'](depth_input)
+  elif args.modality == 'rgbd':
+      #print("sample['depths']===",sample['depths'].shape)
+      #print("sample['rgbs']===",sample['rgbs'].shape)
+      rgbd = torch.cat((sample['rgbs'], sample['depths']), 2)
+      #print("combined===",rgbd.shape)        
+      #exit()
+      rgbd_input = rgbd.view(
+        (batch_size*target_length,) + RGBD_INPUT_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](rgbd_input)
   elif args.modality == 'pdflow':
       pdflow_input = sample['flows'].view(
         (batch_size*target_length,) + FLOW_SHAPE

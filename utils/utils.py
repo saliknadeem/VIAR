@@ -263,11 +263,11 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
                                lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
 
   criterions = {}
-  criterions['crossview'] = nn.MSELoss(size_average=False, reduce=True)
-  criterions['reconstruct'] = nn.MSELoss(size_average=False, reduce=True)
-  criterions['viewclassify'] = nn.CrossEntropyLoss(size_average=False, reduce=True)
+  criterions['crossview'] = nn.MSELoss( reduction='sum') #,reduce=True)# size_average=False, reduce=True)
+  criterions['reconstruct'] = nn.MSELoss( reduction='sum')#,reduce=True)# size_average=False, reduce=True)
+  criterions['viewclassify'] = nn.CrossEntropyLoss( reduction='sum')#,reduce=True)# size_average=False, reduce=True)
   criterions['view_accuracy'] = nn.Softmax(dim=-1)
-  criterions['actionclassify'] = nn.CrossEntropyLoss(size_average=False, reduce=True)
+  criterions['actionclassify'] = nn.CrossEntropyLoss( reduction='sum')#,reduce=True)# size_average=False, reduce=True)
   criterions['action_accuracy'] = nn.Softmax(dim=-1)
 
   n_iters = math.ceil(n_epoch * len(train_dataset) / args.batch_size)
@@ -321,7 +321,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
             optimizers[m] = optim.Adam(models[m].parameters(), 
                                lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
  
-      if iter == 2500: #skl
+      if iter == 5000 and args.disable_grl: #skl
         args.disable_grl = False
         models['viewclassifier'] = ViewClassifier(
             input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
