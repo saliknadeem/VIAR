@@ -345,7 +345,8 @@ class NTURGBDwithFlow(Dataset):
     flows = torch.stack(flows)
     
     #print("-------------flows------------", flows.size())
-    
+    #exit()
+    #np.pad(flows, 1, mode='constant')
     
     #############################################print("=================actual={}/{}==={}===".format(frame_indices,length,videoname),idx )
     
@@ -490,7 +491,7 @@ class NTURGBDwithFlow(Dataset):
  
     
     
-    print("-------------videoname------------", videoname)
+    '''    print("-------------videoname------------", videoname)
     print("-------------RGB------------", rgb.size())
     print("-------------RGBs------------", rgbs.size())
     print("-------------depths------------", depths.size())
@@ -499,7 +500,7 @@ class NTURGBDwithFlow(Dataset):
     print("-------------otherview_flows------------", otherview_depths[0:60,:,:,:].size())
     print("-------------otherview_depths2------------", otherview_depths[60:,:,:,:].size())
     print("-------------otherview_flows2------------", otherview_depths[60:,:,:,:].size())
-    print("-------------action_label------------", action_label)
+    print("-------------action_label------------", action_label)'''
     
     
     

@@ -59,6 +59,7 @@ class CNN(nn.Module):
       #print("x=====",x.shape)
     if interrupt == 1: 
       # _get_intermediate_outsize
+      #print("int_x=====",x.shape)
       return x
 
     return x
@@ -74,22 +75,22 @@ class CNN(nn.Module):
   # generate input sample and forward to get output shape
   def _get_intermediate_outsize(self, input_shape, interrupt):
     input = Variable(torch.rand(1, *input_shape)) # 1 for batch_size
-    #print("====input",input.shape)
+    #print("====input======",input.shape)
     output_feat = self.forward(input, interrupt=interrupt)
-    #print("====output_feat",output_feat.shape)
+    #print("====output_feat======",output_feat.shape)
     n_size = output_feat.size()[1:]
-    #print("====n_size",n_size)
+    #print("====n_size=====",n_size)
     #exit()
     return n_size
 
 class Encoder(nn.Module):
-  def __init__(self, input_shape, encoder_block='convbilstm', hidden_size=64):
+  def __init__(self, input_shape, encoder_block='convbilstm', hidden_size=128):
     super(Encoder, self).__init__()
     self.input_shape = input_shape
     self.encoder_block=encoder_block
     self.hidden_size = hidden_size
     self.out_size = None
-    #self.num_layers = 1
+    self.num_layers = 1
     
     #self.hidden_size = hidden_size
     #self.num_layers = num_layers
@@ -106,12 +107,17 @@ class Encoder(nn.Module):
         bidirectional=True,
         #dilation=2,stride=1, dropout=0.2,
         #dropout=0.1,
+        num_layers=self.num_layers,
         batch_first=True
         )
     elif self.encoder_block == 'brnn':
         #print("self.input_shape[0]====",self.input_shape[0])
         self.convlstm = nn.LSTM(
-            self.input_shape[0], self.hidden_size, self.num_layers, batch_first=True, bidirectional=True
+            self.input_shape[0], 
+            self.hidden_size, 
+            self.num_layers, 
+            batch_first=True, 
+            bidirectional=True
             )
       # self.convlstm.apply(self._init_weights) # TODO
     else:
@@ -196,6 +202,212 @@ class BRNN(nn.Module):
 
 
 
+'''class ConvNdRNNBase(torch.nn.Module):
+    def __init__(self,
+         mode: str='LSTM',
+         in_channels: int,
+         out_channels: int,
+         kernel_size: Union[int, Sequence[int]],
+         num_layers: int=1,
+         bias: bool=True,
+         batch_first: bool=False,
+         dropout: float=0.,
+         bidirectional: bool=False,
+         convndim: int=2,
+         stride: Union[int, Sequence[int]]=1,
+         dilation: Union[int, Sequence[int]]=1,
+         groups: int=1):
+        super().__init__()
+        self.mode = mode
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_layers = num_layers
+        self.bias = bias
+        self.batch_first = batch_first
+        self.dropout = dropout
+        self.bidirectional = bidirectional
+        self.convndim = convndim
+
+        if convndim == 1:
+            ntuple = _single
+        elif convndim == 2:
+            ntuple = _pair
+        elif convndim == 3:
+            ntuple = _triple
+        else:
+            raise ValueError('convndim must be 1, 2, or 3, but got {}'.format(convndim))
+
+        self.kernel_size = ntuple(kernel_size)
+        self.stride = ntuple(stride)
+        self.dilation = ntuple(dilation)
+
+        self.groups = groups
+
+        num_directions = 2 if bidirectional else 1
+
+        if mode in ('LSTM', 'PeepholeLSTM'):
+            gate_size = 4 * out_channels
+        elif mode == 'GRU':
+            gate_size = 3 * out_channels
+        else:
+            gate_size = out_channels
+
+        self._all_weights = []
+        for layer in range(num_layers):
+            for direction in range(num_directions):
+                layer_input_size = in_channels if layer == 0 else out_channels * num_directions
+                w_ih = Parameter(torch.Tensor(gate_size, layer_input_size // groups, *self.kernel_size))
+                w_hh = Parameter(torch.Tensor(gate_size, out_channels // groups, *self.kernel_size))
+
+                b_ih = Parameter(torch.Tensor(gate_size))
+                b_hh = Parameter(torch.Tensor(gate_size))
+
+                if mode == 'PeepholeLSTM':
+                    w_pi = Parameter(torch.Tensor(out_channels, out_channels // groups, *self.kernel_size))
+                    w_pf = Parameter(torch.Tensor(out_channels, out_channels // groups, *self.kernel_size))
+                    w_po = Parameter(torch.Tensor(out_channels, out_channels // groups, *self.kernel_size))
+                    layer_params = (w_ih, w_hh, w_pi, w_pf, w_po, b_ih, b_hh)
+                    param_names = ['weight_ih_l{}{}', 'weight_hh_l{}{}',
+                                   'weight_pi_l{}{}', 'weight_pf_l{}{}', 'weight_po_l{}{}']
+                else:
+                    layer_params = (w_ih, w_hh, b_ih, b_hh)
+                    param_names = ['weight_ih_l{}{}', 'weight_hh_l{}{}']
+                if bias:
+                    param_names += ['bias_ih_l{}{}', 'bias_hh_l{}{}']
+
+                suffix = '_reverse' if direction == 1 else ''
+                param_names = [x.format(layer, suffix) for x in param_names]
+
+                for name, param in zip(param_names, layer_params):
+                    setattr(self, name, param)
+                self._all_weights.append(param_names)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1.0 / math.sqrt(self.out_channels)
+        for weight in self.parameters():
+            weight.data.uniform_(-stdv, stdv)
+
+    def check_forward_args(self, input, hidden, batch_sizes):
+        is_input_packed = batch_sizes is not None
+        expected_input_dim = (2 if is_input_packed else 3) + self.convndim
+        if input.dim() != expected_input_dim:
+            raise RuntimeError(
+                'input must have {} dimensions, got {}'.format(
+                    expected_input_dim, input.dim()))
+        ch_dim = 1 if is_input_packed else 2
+        if self.in_channels != input.size(ch_dim):
+            raise RuntimeError(
+                'input.size({}) must be equal to in_channels . Expected {}, got {}'.format(
+                    ch_dim, self.in_channels, input.size(ch_dim)))
+
+        if is_input_packed:
+            mini_batch = int(batch_sizes[0])
+        else:
+            mini_batch = input.size(0) if self.batch_first else input.size(1)
+
+        num_directions = 2 if self.bidirectional else 1
+        expected_hidden_size = (self.num_layers * num_directions,
+                                mini_batch, self.out_channels) + input.shape[ch_dim + 1:]
+
+        def check_hidden_size(hx, expected_hidden_size, msg='Expected hidden size {}, got {}'):
+            if tuple(hx.size()) != expected_hidden_size:
+                raise RuntimeError(msg.format(expected_hidden_size, tuple(hx.size())))
+
+        if self.mode in ('LSTM', 'PeepholeLSTM'):
+            check_hidden_size(hidden[0], expected_hidden_size,
+                              'Expected hidden[0] size {}, got {}')
+            check_hidden_size(hidden[1], expected_hidden_size,
+                              'Expected hidden[1] size {}, got {}')
+        else:
+            check_hidden_size(hidden, expected_hidden_size)
+
+    def forward(self, input, hx=None):
+        is_packed = isinstance(input, PackedSequence)
+        if is_packed:
+            input, batch_sizes = input
+            max_batch_size = batch_sizes[0]
+            insize = input.shape[2:]
+        else:
+            batch_sizes = None
+            max_batch_size = input.size(0) if self.batch_first else input.size(1)
+            insize = input.shape[3:]
+
+        if hx is None:
+            num_directions = 2 if self.bidirectional else 1
+            hx = input.new_zeros(self.num_layers * num_directions, max_batch_size, self.out_channels,
+                                 *insize, requires_grad=False)
+            if self.mode in ('LSTM', 'PeepholeLSTM'):
+                hx = (hx, hx)
+
+        self.check_forward_args(input, hx, batch_sizes)
+        func = AutogradConvRNN(
+            self.mode,
+            num_layers=self.num_layers,
+            batch_first=self.batch_first,
+            dropout=self.dropout,
+            train=self.training,
+            bidirectional=self.bidirectional,
+            variable_length=batch_sizes is not None,
+            convndim=self.convndim,
+            stride=self.stride,
+            dilation=self.dilation,
+            groups=self.groups
+            )
+        output, hidden = func(input, self.all_weights, hx, batch_sizes)
+        if is_packed:
+            output = PackedSequence(output, batch_sizes)
+        return output, hidden
+
+    def extra_repr(self):
+        s = ('{in_channels}, {out_channels}, kernel_size={kernel_size}'
+             ', stride={stride}')
+        if self.dilation != (1,) * len(self.dilation):
+            s += ', dilation={dilation}'
+        if self.groups != 1:
+            s += ', groups={groups}'
+        if self.num_layers != 1:
+            s += ', num_layers={num_layers}'
+        if self.bias is not True:
+            s += ', bias={bias}'
+        if self.batch_first is not False:
+            s += ', batch_first={batch_first}'
+        if self.dropout != 0:
+            s += ', dropout={dropout}'
+        if self.bidirectional is not False:
+            s += ', bidirectional={bidirectional}'
+        return s.format(**self.__dict__)
+
+    def __setstate__(self, d):
+        super(ConvNdRNNBase, self).__setstate__(d)
+        if 'all_weights' in d:
+            self._all_weights = d['all_weights']
+        if isinstance(self._all_weights[0][0], str):
+            return
+        num_layers = self.num_layers
+        num_directions = 2 if self.bidirectional else 1
+        self._all_weights = []
+        for layer in range(num_layers):
+            for direction in range(num_directions):
+                suffix = '_reverse' if direction == 1 else ''
+                if self.mode == 'PeepholeLSTM':
+                    weights = ['weight_ih_l{}{}', 'weight_hh_l{}{}',
+                               'weight_pi_l{}{}', 'weight_pf_l{}{}', 'weight_po_l{}{}',
+                               'bias_ih_l{}{}', 'bias_hh_l{}{}']
+                else:
+                    weights = ['weight_ih_l{}{}', 'weight_hh_l{}{}',
+                               'bias_ih_l{}{}', 'bias_hh_l{}{}']
+                weights = [x.format(layer, suffix) for x in weights]
+                if self.bias:
+                    self._all_weights += [weights]
+                else:
+                    self._all_weights += [weights[:len(weights) // 2]]
+
+    @property
+    def all_weights(self):
+        return [[getattr(self, weight) for weight in weights] for weights in self._all_weights]
+'''
 
 
 ##########################################################
@@ -258,7 +470,7 @@ class CrossViewDecoder(nn.Module):
     self.input_shape = input_shape
     self.out_size = None
 
-    '''    # Transposed Conv
+    # Transposed Conv
     self.deconv2d_1 = nn.ConvTranspose2d(
       in_channels=self.input_shape[0], out_channels=80, kernel_size=3, 
       stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1)
@@ -287,7 +499,7 @@ class CrossViewDecoder(nn.Module):
         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
       elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
-        nn.init.constant_(m.bias, 0)'''
+        nn.init.constant_(m.bias, 0)
 
 
     '''    self.dfc3 = nn.Linear(input_shape, 1024)
@@ -298,7 +510,9 @@ class CrossViewDecoder(nn.Module):
     self.bn1 = nn.BatchNorm2d(256*6*6)
     self.upsample1=nn.Upsample(scale_factor=2)'''
 
-    self.upsample1=nn.Upsample(scale_factor=2)
+    
+    
+    '''    self.upsample1=nn.Upsample(scale_factor=2)
     self.dconv5 = nn.ConvTranspose2d(input_shape[0], 128, 3, 
       stride=2, padding=2, output_padding=1, groups=1, bias=True, dilation=1)
     self.bn5 = nn.BatchNorm2d(128)
@@ -318,7 +532,7 @@ class CrossViewDecoder(nn.Module):
         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
       elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
-        nn.init.constant_(m.bias, 0)
+        nn.init.constant_(m.bias, 0)'''
 
 
 
@@ -330,13 +544,13 @@ class CrossViewDecoder(nn.Module):
     #   e: (2k, h, w)
     #   x concat e: (3k, h, w)
     
-    '''    x = torch.cat((x,e), dim=1) # dim 0 is batch dimension
+    x = torch.cat((x,e), dim=1) # dim 0 is batch dimension
     x = F.relu( self.deconv2d_1_bn( self.deconv2d_1(x) ) )
     x = F.relu( self.deconv2d_2_bn( self.deconv2d_2(x) ) )
     x = F.relu( self.deconv2d_3_bn( self.deconv2d_3(x) ) )
-    x = self.deconv2d_4(x) # x.size(0) for batch size'''
+    x = self.deconv2d_4(x) # x.size(0) for batch size
     
-    #print ('x-base===',x.size())
+    '''    #print ('x-base===',x.size())
     x = torch.cat((x,e), dim=1)
     #print ('x-cat===',x.size())
     x = F.relu(self.bn5( self.dconv5(x) ))
@@ -354,7 +568,7 @@ class CrossViewDecoder(nn.Module):
     #x=self.upsample1(x)
     #print (x.size())
     x = self.dconv1(x)
-    #print ('x-c1===',x.size())
+    #print ('x-c1===',x.size())'''
  
     
     if interrupt == 1: 
@@ -489,9 +703,6 @@ class MultiTaskLossWrapper(nn.Module):
         self.log_vars = nn.Parameter(torch.zeros((task_num)))
 
     def forward(self, sample, criterions,encoder_output, device='cuda'):
-        #task_num = 4
-        #log_vars = torch.zeros((task_num))
-        #loss = 0
         DEPTH_INPUT_SHAPE = (1,224,224)
         batch_size = len(sample['videoname'])
         target_length = len(sample['rgbs'][0])
@@ -499,7 +710,7 @@ class MultiTaskLossWrapper(nn.Module):
         encoder_output = encoder_output.contiguous().view(
         (batch_size*target_length,) + self.models['encoder'].out_size[1:] )
 
-        # CrossViewDecoder
+        '''# CrossViewDecoder
         otherview_depth_input = sample['otherview_depths'].view(
           (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
         otherview2_depth_input = sample['otherview2_depths'].view(
@@ -512,7 +723,7 @@ class MultiTaskLossWrapper(nn.Module):
         crossview_output = crossview_output.view(
           (batch_size, target_length) + self.models['crossviewdecoder'].out_size )
         crossview_output2 = crossview_output2.view(
-          (batch_size, target_length) + self.models['crossviewdecoder'].out_size ) #skl
+          (batch_size, target_length) + self.models['crossviewdecoder'].out_size ) #skl'''
 
 
 
@@ -542,10 +753,10 @@ class MultiTaskLossWrapper(nn.Module):
         #                criterions['crossview'](crossview_output, sample['otherview_flows'].to(device)) + self.log_vars[0], -1).to(device)
         #loss += torch.sum(torch.exp(-self.log_vars[1]).to(device) * 
         #                 criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device)) + self.log_vars[1], -1).to(device)
-        loss = torch.sum(torch.exp(-self.log_vars[2]).to(device) * 
-                          criterions['reconstruct'](reconstruct_output, sample['flows'].to(device)) + self.log_vars[2], -1).to(device)
-        loss += torch.sum(torch.exp(-self.log_vars[3]).to(device) * 
-                          -math.log(criterions['view_accuracy'](viewclassify_loss) )  + self.log_vars[3], -1).to(device)  
+        loss = torch.sum(torch.exp(-self.log_vars[0]).to(device) * 
+                          criterions['reconstruct'](reconstruct_output, sample['flows'].to(device)) + self.log_vars[0], -1).to(device)
+        loss += torch.sum(torch.exp(-self.log_vars[1]).to(device) * 
+                          -math.log(criterions['view_accuracy'](viewclassify_loss) )  + self.log_vars[1], -1).to(device)  
         
         loss = torch.mean(loss).to(device)
 

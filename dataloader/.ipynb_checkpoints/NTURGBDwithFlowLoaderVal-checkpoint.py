@@ -462,7 +462,7 @@ class NTURGBDwithFlow(Dataset):
     otherview_depths = torch.stack(otherview_depths)
     otherview_flows = torch.stack(otherview_flows)
 
-    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    '''    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
     for f in flow_h5['flow'][frame_indices]:
@@ -471,7 +471,7 @@ class NTURGBDwithFlow(Dataset):
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
-
+    '''
 
     
     
@@ -526,10 +526,10 @@ class NTURGBDwithFlow(Dataset):
               'view_id': torch.Tensor(view_id),
               'rgbs': rgbs,
               'depths': depths,
-              'otherview_depths': otherview_depths[0:6,:,:,:],
-              'otherview_flows': otherview_flows[0:6,:,:,:],
-              'otherview2_depths': otherview_depths[6:,:,:,:],
-              'otherview2_flows': otherview_flows[6:,:,:,:], 
+              'otherview_depths': otherview_depths[0:self.target_length,:,:,:],
+              'otherview_flows': otherview_flows[0:self.target_length,:,:,:],
+              'otherview2_depths': otherview_depths[self.target_length:,:,:,:],
+              'otherview2_flows': otherview_flows[self.target_length:,:,:,:], 
               'action_label': action_label,
               'flows': flows,
               'videoname': videoname,
@@ -771,7 +771,7 @@ class NTURGBDwithFlowValidation(Dataset):
         total_sequences_list = []
         for i in range(0,length-1):
             if i % self.target_length == 0:
-                total_sequences_list.append(list(range(i+1,i+1+6)))
+                total_sequences_list.append(list(range(i+1,i+1+self.target_length)))
         frame_indices_temp = np.linspace(1, total_sequences, endpoint=False, 
                                     num=10, dtype=int)
         total_sequences_list = np.array(total_sequences_list)
@@ -924,7 +924,7 @@ class NTURGBDwithFlowValidation(Dataset):
     otherview_depths = torch.stack(otherview_depths)
     otherview_flows = torch.stack(otherview_flows)
 
-    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    '''    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
     for frame_indices in frames:
@@ -934,6 +934,7 @@ class NTURGBDwithFlowValidation(Dataset):
           flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
           flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
+    '''
 
 
 
@@ -959,10 +960,10 @@ class NTURGBDwithFlowValidation(Dataset):
               'view_id': torch.Tensor(view_id),
               'rgbs': rgbs,
               'depths': depths,
-              'otherview_depths': otherview_depths[0:60,:,:,:],
-              'otherview_flows': otherview_flows[0:60,:,:,:],
-              'otherview2_depths': otherview_depths[60:,:,:,:],
-              'otherview2_flows': otherview_flows[60:,:,:,:], 
+              'otherview_depths': otherview_depths[0:(self.target_length*10),:,:,:],
+              'otherview_flows': otherview_flows[0:(self.target_length*10),:,:,:],
+              'otherview2_depths': otherview_depths[(self.target_length*10):,:,:,:],
+              'otherview2_flows': otherview_flows[(self.target_length*10):,:,:,:], 
               'action_label': action_label,
               'flows': flows,
               'videoname': videoname,
