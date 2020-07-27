@@ -305,8 +305,8 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
           writer.add_scalar(
             'train_data/{}'.format(log), train_result['logs'][log], iter
             )
-        print('{}: Epoch: {:d}, Sample: {:d}, ET: {}'.format(
-          unique_name, epoch_num, iter, timeSince(start, iter / n_iters)
+        print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
+          unique_name, epoch_num,args.learning_rate, iter, timeSince(start, iter / n_iters)
           ) )
       # iteration += 1 for every sample
       

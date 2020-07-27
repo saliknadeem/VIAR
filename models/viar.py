@@ -305,10 +305,26 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
 
   #print('encodercnn_output======',encodercnn_output.shape)
-  #print('encoder_output======',encoder_output.shape)
-  #print('crossviewcnn_output======',crossviewcnn_output.shape) 
+  
   #encodercnn_output = np.pad(encodercnn_output.cpu,[(0, 0),(0, 0),(0, 0), (98, 98),(98, 98)],mode='constant')
   #print('encodercnn_output======',encodercnn_output.shape)
+  #print('encoder_output======',encoder_output.shape)
+  #print('crossviewcnn_output======',crossviewcnn_output.shape) 
+    
+
+  '''
+    encodercnn_output====== torch.Size([8, 6, 64, 7, 7])
+    encoder_output====== torch.Size([48, 128, 7, 7])
+    crossviewcnn_output====== torch.Size([48, 64, 7, 7])
+    
+    
+    encodercnn_output====== torch.Size([8, 6, 64, 7, 7])
+    encoder_output====== torch.Size([48, 256, 7, 7])
+    crossviewcnn_output====== torch.Size([48, 64, 7, 7])
+
+  '''
+
+    
 
   crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
   crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
@@ -334,7 +350,8 @@ def run(split, sample, models, target_modules=[], device='cuda',
     
     
   ######################## MTL #################################  
-  #loss, log_vars = models['multitasklosswrapper'](sample, criterions, encoder_output)
+  if args.mtl :
+    loss, log_vars = models['multitasklosswrapper'](sample, criterions, encoder_output)
   
   if split in ['train', 'validate']:
     if set_grad:
@@ -366,8 +383,11 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
     reconstruct_loss = criterions['reconstruct'](reconstruct_output, sample['flows'].to(device))
     viewclassify_loss = criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device))
-    #total_loss += (crossview_loss +  loss )   #   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
-    total_loss += (crossview_loss +   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+    
+    if args.mtl:
+        total_loss += (crossview_loss +  loss )   #   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+    else:
+        total_loss += (crossview_loss   +   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
 
     
     
@@ -481,7 +501,8 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
   if split in ['train', 'validate']:
     if set_grad:
       if 'encodercnn' in target_modules: optimizers['encodercnn'].zero_grad()
-      if 'encoder' in target_modules: optimizers['encoder'].zero_grad()
+      if not args.fix_encoder:
+          if 'encoder' in target_modules: optimizers['encoder'].zero_grad()
       if 'actionclassifier' in target_modules: optimizers['actionclassifier'].zero_grad() #actionaction needed
     
 
@@ -567,7 +588,8 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     if set_grad and action_loss != 0:
       action_loss.backward()
       if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
-      if 'encoder' in target_modules: optimizers['encoder'].step()
+      if not args.fix_encoder:
+          if 'encoder' in target_modules: optimizers['encoder'].step()
       if 'actionclassifier' in target_modules: optimizers['actionclassifier'].step() 
 
     result['logs']['actionclassify'] = action_loss.item() if action_loss > 0 else 0
@@ -590,6 +612,16 @@ def get_args():
   # argument for adding comments
   parser.add_argument('--comment', dest='comment', 
     default='', help='just enter additional network details here')
+
+  # Enable or disable MTL
+  parser.add_argument('--mtl', dest='mtl',
+    default=False, action='store_true',
+    help='Disable MTL')
+    
+  # Fix encoder weights
+  parser.add_argument('--fix-encoder', dest='fix_encoder',
+    default=False, action='store_true',
+    help='fix encoder or use normally')
 
   # What To Do
   parser.add_argument('--train', dest='for_what', 
@@ -653,7 +685,7 @@ def get_args():
 
   # Dataloaders
   parser.add_argument('--visual-transform', dest='visual_transform',
-    default='normalize', choices=[None, 'normalize'],
+    default=None, choices=[None, 'normalize'],
     help='Transform to apply in NTURGBDwithFlow')
   parser.add_argument('--target-length', dest='target_length',
     type=int, default=6,
