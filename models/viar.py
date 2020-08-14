@@ -111,7 +111,7 @@ def build_models(args, device='cuda'):
     input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
     num_classes=60).to(device)
 
-  models['multitasklosswrapper'] = MultiTaskLossWrapper(2,models).to(device)
+  models['multitasklosswrapper'] = MultiTaskLossWrapper(models=models).to(device)
 
   return models
 
@@ -258,10 +258,10 @@ def run(split, sample, models, target_modules=[], device='cuda',
       encodercnn_output = models['encodercnn'](rgbd_input)
   elif args.modality == 'pdflow':
       #print("-----=-=-=-sample['flows']",sample['flows'].shape)
-      pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
+      #pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
       #print("-----=-=-=-pdflow_input",pdflow_input.shape)
-      pdflow_input = pdflow_input.view(
-        (batch_size*target_length,) + (3,224,224)
+      pdflow_input = sample['flowsActual'].view(
+        (batch_size*target_length,) + FLOW_SHAPE
         ).to(device)
       #print("-----=-=-=-pdflow_input",pdflow_input.shape)
       encodercnn_output = models['encodercnn'](pdflow_input)
@@ -386,11 +386,11 @@ def run(split, sample, models, target_modules=[], device='cuda',
     
     if args.mtl:
         total_loss += (crossview_loss +  loss )   #   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+        #total_loss = loss 
+
     else:
         total_loss += (crossview_loss   +   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
 
-    
-    
     
     
     """ Code to see accuracy """
@@ -415,8 +415,8 @@ def run(split, sample, models, target_modules=[], device='cuda',
       if 'viewclassifier' in target_modules: optimizers['viewclassifier'].step()
       if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].step()        
 
-    result['logs']['loss'] = total_loss.item() #if total_loss > 0 else 0
-    #result['logs']['loss'] = loss.item() if loss > 0 else 0
+    #result['logs']['loss'] = total_loss.item() #if total_loss > 0 else 0
+    result['logs']['loss'] = total_loss.item() #if loss > 0 else 0
     result['logs']['crossview_loss'] = crossview_loss.item() #if crossview_loss > 0 else 0
     result['logs']['reconstruct_loss'] = reconstruct_loss.item() #if reconstruct_loss > 0 else 0
     result['logs']['viewclassify_loss'] = viewclassify_loss.item() #if viewclassify_loss > 0 else 0
@@ -471,23 +471,32 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
       encodercnn_output = models['encodercnn'](rgbd_input)
   elif args.modality == 'pdflow': 
       #print("-----=-=-=-sample['flows']",sample['flows'].shape)
-      pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
+      #pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
       #print("-----=-=-=-pdflow_input",pdflow_input.shape)
-      pdflow_input = pdflow_input.view(
-        (batch_size*target_length,) + (3,224,224)
+      pdflow_input = sample['flowsActual'].view(
+        (batch_size*target_length,) + FLOW_SHAPE
         ).to(device)
       #print("-----=-=-=-pdflow_input",pdflow_input.shape)
       encodercnn_output = models['encodercnn'](pdflow_input)
+
     
+ 
   encodercnn_output = encodercnn_output.view(
     (batch_size, target_length) + models['encodercnn'].out_size )
+  print("===========encodercnn_output=",encodercnn_output.shape) # ([48,128,7,7]) 
   encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
+  print("===========encoder_output=",encoder_output.shape) # ([48,128,7,7]) 
   if split == 'test':
     result['output']['encoder_output'] = encoder_output
+    
+
   encoder_output = encoder_output.contiguous().view(
     (batch_size*target_length,) + models['encoder'].out_size[1:] )
+  
+  #encoder_output = encoder_output.mean(1)
 
-
+  print("===========encoder_output=",encoder_output.shape) # ([48,128,7,7])
+  
 
   # ActionClassifier
   actionclassify_output = models['actionclassifier'](
@@ -514,10 +523,13 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
       
     #actionclassify_output = torch.autograd.Variable(torch.mean(actionclassify_output, 1, True).repeat(1, target_length, 1) ,requires_grad=True)
     
+    
+    print("===========actionclassify_output=",actionclassify_output.shape) # ([batch,T, 60])
+    
     actionclassify_output = actionclassify_output.mean(1)
 
-    
-    #print("===========actionclassify_output=",actionclassify_output.shape) # ([16, 6, 60])
+    print("===========actionclassify_output=",actionclassify_output.shape) # ([batch, 60])
+    exit()
     #print("actionclassify_output=",actionclassify_output)
     #print("actionclassify_output.shape=",actionclassify_output.shape,"\n")
     

@@ -16,7 +16,7 @@ from PIL import Image
 
 import cv2
 import skimage.measure
-
+from skimage.transform import resize
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -287,8 +287,6 @@ class NTURGBDwithFlow(Dataset):
       # Exclude last frame so we can use the same number of flow images
     #####frame_indices = list(frame_indices)
 
-    
-    
 
     rgb_h5_path = os.path.join(self.rgb_h5_dir, videoname + '_pngs.h5')
     rgb_h5 = h5py.File(rgb_h5_path, 'r')
@@ -304,7 +302,6 @@ class NTURGBDwithFlow(Dataset):
       rgbs.append(rgb)
     rgbs = torch.stack(rgbs)
 
- 
     
     #############depth_h5_path = os.path.join(self.depth_h5_dir, videoname + '_pngs.h5')
     depth_h5_path = os.path.join(self.depth_h5_dir, videoname + '_maskeddepth_pngs.h5')
@@ -330,19 +327,31 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------depths------------", depths.size())
 
-    
-
 
     flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
+    flowsActual = []
     for f in flow_h5['flow'][frame_indices]:
-      flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
       #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
+      flowActual = torch.from_numpy(f)
+      flow = torch.from_numpy(f)
+      #flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+      ##### Resize operation using interpolate on tensors
+      flow = np.transpose(flow, (0, 2, 1))
+      flow = F.interpolate(flow, self.side_size // self.patch_size)
+      flow = np.transpose(flow, (0, 2, 1))
+      flow = F.interpolate(flow, self.side_size // self.patch_size)
+      ######################
       flow = np.transpose(flow, (2,0,1))
+      flowActual = np.transpose(flowActual, (2,0,1)) 
+      flowActual = flowActual * 50
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+      flowsActual.append(torch.FloatTensor(flowActual))
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
+    flowsActual = torch.stack(flowsActual)
     
     #print("-------------flows------------", flows.size())
     #exit()
@@ -440,7 +449,8 @@ class NTURGBDwithFlow(Dataset):
           self.flow_h5_dir, otherview_videoname_index + '_3dflow.h5')
         otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r')
         for f in otherview_flow_h5['flow'][otherview_frame_indices]:
-          flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+          #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+          flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
           flow = np.transpose(flow, (2,0,1))
           flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
           otherview_flows.append(torch.FloatTensor(flow))
@@ -449,15 +459,18 @@ class NTURGBDwithFlow(Dataset):
     otherview_depths = torch.stack(otherview_depths)
     otherview_flows = torch.stack(otherview_flows)
 
-    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    
+    
+'''    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r')
     flows = []
     for f in flow_h5['flow'][frame_indices]:
-      flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
       flow = np.transpose(flow, (2,0,1))
       flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flows.append(torch.FloatTensor(flow))
-    flows = torch.stack(flows)
+    flows = torch.stack(flows)'''
 
 
     
@@ -520,6 +533,7 @@ class NTURGBDwithFlow(Dataset):
               'otherview2_flows': otherview_flows[6:,:,:,:], 
               'action_label': action_label,
               'flows': flows,
+              'flowsActual':flowsActual,
               'videoname': videoname,
               'videoname_sequence':videoname_sequence
               }

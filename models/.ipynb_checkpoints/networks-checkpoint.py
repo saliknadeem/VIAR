@@ -90,7 +90,7 @@ class Encoder(nn.Module):
     self.encoder_block=encoder_block
     self.hidden_size = hidden_size
     self.out_size = None
-    self.num_layers = 1
+    self.num_layers = 2
     
     #self.hidden_size = hidden_size
     #self.num_layers = num_layers
@@ -105,8 +105,8 @@ class Encoder(nn.Module):
         kernel_size=7,  # Int or List[int]
         #num_layers=1, stride=1, dropout=0.2, #### skl it was 1
         bidirectional=True,
-        dilation=1,stride=1, dropout=0.2,
-        #dropout=0.1,
+        #dilation=1,stride=1, dropout=0.2,
+        dropout=0.2,
         num_layers=self.num_layers,
         batch_first=True
         )
@@ -470,16 +470,17 @@ class CrossViewDecoder(nn.Module):
     self.input_shape = input_shape
     self.out_size = None
 
-    # Transposed Conv
+    #########################original ##########################
+        # Transposed Conv
     self.deconv2d_1 = nn.ConvTranspose2d(
       in_channels=self.input_shape[0], out_channels=80, kernel_size=3, 
-      stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1)
+      stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
       #stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1) #skl
-    self.deconv2d_1_bn = nn.BatchNorm2d(80) #skl
+    self.deconv2d_1_bn = nn.BatchNorm2d(80) #skl 80
 
     self.deconv2d_2 = nn.ConvTranspose2d(
-      in_channels=80, out_channels=36, kernel_size=5, 
-      stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
+      in_channels=80, out_channels=36, kernel_size=3, 
+      stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1)
     self.deconv2d_2_bn = nn.BatchNorm2d(36) #skl 36
 
     self.deconv2d_3 = nn.ConvTranspose2d(
@@ -490,9 +491,40 @@ class CrossViewDecoder(nn.Module):
     self.deconv2d_4 = nn.ConvTranspose2d(
       in_channels=17, out_channels=3, kernel_size=5, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
+    self.deconv2d_4_bn = nn.BatchNorm2d(3)
+    
+    #####################################################
+    
+    
+    ########## copied from recon decoder #########################
+    
+    '''    # Transposed Conv
+    self.deconv2d_1 = nn.ConvTranspose2d(
+      in_channels=self.input_shape[0], out_channels=64, kernel_size=3, 
+      stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1)
+    self.deconv2d_1_bn = nn.BatchNorm2d(64)
 
+    self.deconv2d_2 = nn.ConvTranspose2d(
+      in_channels=64, out_channels=32, kernel_size=5, 
+      stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
+    self.deconv2d_2_bn = nn.BatchNorm2d(32)
+
+    self.deconv2d_3 = nn.ConvTranspose2d(
+      in_channels=32, out_channels=16, kernel_size=5, 
+      stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
+    self.deconv2d_3_bn = nn.BatchNorm2d(16)
+
+    self.deconv2d_4 = nn.ConvTranspose2d(
+      in_channels=16, out_channels=3, kernel_size=5, 
+      stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)'''
+    
+    ##################################################################
+    
+    
+    
     # indicate out_size according to what you are going to do
     self.out_size = self._get_intermediate_outsize(input_shape, interrupt=1)
+    
 
     for m in self.modules():
       if isinstance(m, nn.ConvTranspose2d):
@@ -500,8 +532,10 @@ class CrossViewDecoder(nn.Module):
       elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
+    
+        
 
-
+    ##################### new atempt
     '''    self.dfc3 = nn.Linear(input_shape, 1024)
     self.bn3 = nn.BatchNorm2d(1024)
     self.dfc2 = nn.Linear(1024, 1024)
@@ -533,7 +567,7 @@ class CrossViewDecoder(nn.Module):
       elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)'''
-
+    ###############################################
 
 
 
@@ -673,8 +707,8 @@ class ActionClassifier(nn.Module):
     super(ActionClassifier, self).__init__()
     self.num_classes = num_classes
     
-    self.fc1 = nn.Linear(input_size, 1024)
-    self.fc2 = nn.Linear(1024, self.num_classes)
+    self.fc1 = nn.Linear(input_size, 512)
+    self.fc2 = nn.Linear(512, self.num_classes)
 
     self.fc1.apply(self._init_weights)
     self.fc2.apply(self._init_weights)
@@ -696,7 +730,7 @@ class ActionClassifier(nn.Module):
 
 
 class MultiTaskLossWrapper(nn.Module):
-    def __init__(self, task_num, models):
+    def __init__(self, models,task_num = 2):
         super(MultiTaskLossWrapper, self).__init__()
         self.models = models
         self.task_num = task_num
@@ -710,8 +744,8 @@ class MultiTaskLossWrapper(nn.Module):
         encoder_output = encoder_output.contiguous().view(
         (batch_size*target_length,) + self.models['encoder'].out_size[1:] )
 
-        '''# CrossViewDecoder
-        otherview_depth_input = sample['otherview_depths'].view(
+        # CrossViewDecoder
+        '''        otherview_depth_input = sample['otherview_depths'].view(
           (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
         otherview2_depth_input = sample['otherview2_depths'].view(
           (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device) #skl
@@ -723,7 +757,9 @@ class MultiTaskLossWrapper(nn.Module):
         crossview_output = crossview_output.view(
           (batch_size, target_length) + self.models['crossviewdecoder'].out_size )
         crossview_output2 = crossview_output2.view(
-          (batch_size, target_length) + self.models['crossviewdecoder'].out_size ) #skl'''
+          (batch_size, target_length) + self.models['crossviewdecoder'].out_size ) #skl
+
+        crossview_output_combined = crossview_output + crossview_output2'''
 
 
 
@@ -750,7 +786,7 @@ class MultiTaskLossWrapper(nn.Module):
 '''
         
         #loss = torch.sum(torch.exp(-self.log_vars[0]).to(device) * 
-        #                criterions['crossview'](crossview_output, sample['otherview_flows'].to(device)) + self.log_vars[0], -1).to(device)
+        #                crossview_output_combined + self.log_vars[0], -1).to(device)
         #loss += torch.sum(torch.exp(-self.log_vars[1]).to(device) * 
         #                 criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device)) + self.log_vars[1], -1).to(device)
         loss = torch.sum(torch.exp(-self.log_vars[0]).to(device) * 

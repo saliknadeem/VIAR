@@ -260,7 +260,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     #                           lr=1e-5, weight_decay=5e-4)
     #else:
     optimizers[m] = optim.Adam(models[m].parameters(), 
-                               lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
+                               lr=args.learning_rate, weight_decay=5e-4 ) #, eps=1e-09) #, betas=(0.9, 0.999), eps=1e-08)
 
   criterions = {}
   criterions['crossview'] = nn.MSELoss( reduction='sum') #,reduce=True)# size_average=False, reduce=True)
