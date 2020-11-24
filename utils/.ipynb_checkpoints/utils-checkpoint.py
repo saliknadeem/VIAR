@@ -207,7 +207,7 @@ def testIters(run, test_loader, test_dataset, models={}, checkpoint_files={},
 
 def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val_dataset,
                models={}, all_models=[], log_prefix='VIAR', 
-               checkpoint_files={}, n_epoch=2000, save_dir='./VIAR', 
+               checkpoint_files={}, n_epoch=8, save_dir='./VIAR', 
                args=None, device='cuda'):
   if len(models) < 1:
     raise ValueError('No model is given for training. Check if models parameter'
@@ -260,7 +260,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     #                           lr=1e-5, weight_decay=5e-4)
     #else:
     optimizers[m] = optim.Adam(models[m].parameters(), 
-                               lr=args.learning_rate, weight_decay=5e-4, eps=1e-09) #, betas=(0.9, 0.999), eps=1e-08)
+                               lr=args.learning_rate, weight_decay=5e-4 ) #, eps=1e-09) #, betas=(0.9, 0.999), eps=1e-08)
 
   criterions = {}
   criterions['crossview'] = nn.MSELoss( reduction='sum') #,reduce=True)# size_average=False, reduce=True)
@@ -287,94 +287,140 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     cmdline = cmdline.replace('{', '\'{').replace('}', '}\'')
     writer.add_text('Command line', cmdline, iter)
 
+  if args.single_batch:
+      #print("trainloader-",train_loader)
+      #single_sample = iter(train_loader)
+      single_sample = train_loader.__iter__().next()
+
   for epoch_num in range(epoch_start, n_epoch + 1):
     
-    for batch_ind, sample in enumerate(train_loader):
-      #print("chefininsdinsidnsidni")
-      train_result = run(target_modules=target_modules,
-                         split='train',
-                         sample=sample, 
-                         models=models, 
-                         optimizers=optimizers, 
-                         criterions=criterions,
-                         args=args,
-                         device=device)
+    if not args.single_batch:
+        for batch_ind, sample in enumerate(train_loader):
+          #print("chefininsdinsidnsidni")
+          train_result = run(target_modules=target_modules,
+                             split='train',
+                             sample=sample, 
+                             models=models, 
+                             optimizers=optimizers, 
+                             criterions=criterions,
+                             args=args,
+                             device=device)
 
-      if iter % args.record_every_iter == 0:
-        for log in train_result['logs']:
+          if iter % args.record_every_iter == 0:
+            for log in train_result['logs']:
+              writer.add_scalar(
+                'train_data/{}'.format(log), train_result['logs'][log], iter
+                )
+            if iter % 10 == 0:
+              print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
+                unique_name, epoch_num,args.learning_rate, iter, timeSince(start, iter / n_iters)
+                ) )
+          # iteration += 1 for every sample
+
+
+          if iter % args.learning_rate_decay == 0:
+            args.learning_rate = args.learning_rate/2.
+            for m in target_modules:
+                #if m == 'encoder':
+                #    optimizers[m] = optim.Adam(models[m].parameters(), 
+                #                   lr=1e-5, weight_decay=5e-4)
+                #else:
+                optimizers[m] = optim.Adam(models[m].parameters(), 
+                                   lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
+
+          if iter == 5000 and args.disable_grl: #skl
+            args.disable_grl = False
+            models['viewclassifier'] = ViewClassifier(
+                input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
+                num_classes=5,
+                reverse=(not args.disable_grl)).to(device)
+
+          iter += 1
+
+
+          if args.val_every_iter is not None:
+            if (args.val_every_iter < len(train_dataset)) and ((iter-1) % args.val_every_iter == 0):
+                print("--------breaking")
+                break # out of train_loader loop
+
+        print('Validation ongoing...') 
+        # in validation use iter-1 for iteration # since iter was incremented in train loop
+        val_start = time.time()
+        val_logs = {}
+        for val_batch_ind, val_sample in enumerate(val_loader):
+          val_result = run(target_modules=target_modules,
+                           split='validate',
+                           sample=val_sample, 
+                           models=models, 
+                           criterions=criterions,
+                           args=args,
+                           device=device)
+
+          for log in val_result['logs']:
+            if log not in val_logs:
+              val_logs[log] = []
+            val_logs[log].append(val_result['logs'][log])
+
+          print('{}: Epoch: {:d}, Validation Sample: {:d}, ET: {}'.format(
+            unique_name, epoch_num, val_batch_ind + 1, 
+            timeSince(val_start, (val_batch_ind + 1) / args.val_size)
+            ) )
+
+          if (args.val_size < len(val_dataset)) and (val_batch_ind + 1 >= args.val_size):
+            break # out of val_loader loop
+
+        val_log_mean = {}
+        for log in val_logs:
+          val_log_mean[log] = torch.Tensor(val_logs[log]).mean()
           writer.add_scalar(
-            'train_data/{}'.format(log), train_result['logs'][log], iter
+            'val_data/{}'.format(log), val_log_mean[log], iter-1
             )
-        print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
-          unique_name, epoch_num,args.learning_rate, iter, timeSince(start, iter / n_iters)
-          ) )
-      # iteration += 1 for every sample
-      
-      
-      if iter % args.learning_rate_decay == 0:
-        args.learning_rate = args.learning_rate/2.
-        for m in target_modules:
-            #if m == 'encoder':
-            #    optimizers[m] = optim.Adam(models[m].parameters(), 
-            #                   lr=1e-5, weight_decay=5e-4)
-            #else:
-            optimizers[m] = optim.Adam(models[m].parameters(), 
-                               lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
- 
-      if iter == 5000 and args.disable_grl: #skl
-        args.disable_grl = False
-        models['viewclassifier'] = ViewClassifier(
-            input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
-            num_classes=5,
-            reverse=(not args.disable_grl)).to(device)
 
-      iter += 1
+        ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
+
+        # Save checkpoint every epoch    
+        save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers,
+          filename=save_path.format(unique_name, epoch_num, iter-1) ) # mind iter-1
         
+    elif args.single_batch: 
+        train_result = run(target_modules=target_modules,
+                             split='train',
+                             sample=single_sample, 
+                             models=models, 
+                             optimizers=optimizers, 
+                             criterions=criterions,
+                             args=args,
+                             device=device)
 
-      if args.val_every_iter is not None:
-        if (args.val_every_iter < len(train_dataset)) and ((iter-1) % args.val_every_iter == 0):
-            print("--------breaking")
-            break # out of train_loader loop
-       
-    print('Validation ongoing...') 
-    # in validation use iter-1 for iteration # since iter was incremented in train loop
-    val_start = time.time()
-    val_logs = {}
-    for val_batch_ind, val_sample in enumerate(val_loader):
-      val_result = run(target_modules=target_modules,
-                       split='validate',
-                       sample=val_sample, 
-                       models=models, 
-                       criterions=criterions,
-                       args=args,
-                       device=device)
+        if iter % args.record_every_iter == 0:
+            for log in train_result['logs']:
+              writer.add_scalar(
+                'train_data/{}'.format(log), train_result['logs'][log], iter
+                )
+            print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
+              unique_name, epoch_num,args.learning_rate, iter, timeSince(start, iter / n_iters)
+              ) )
+          # iteration += 1 for every sample
 
-      for log in val_result['logs']:
-        if log not in val_logs:
-          val_logs[log] = []
-        val_logs[log].append(val_result['logs'][log])
+        if iter % args.learning_rate_decay == 0:
+            args.learning_rate = args.learning_rate/2.
+            for m in target_modules:
+                #if m == 'encoder':
+                #    optimizers[m] = optim.Adam(models[m].parameters(), 
+                #                   lr=1e-5, weight_decay=5e-4)
+                #else:
+                optimizers[m] = optim.Adam(models[m].parameters(), 
+                                   lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
 
-      print('{}: Epoch: {:d}, Validation Sample: {:d}, ET: {}'.format(
-        unique_name, epoch_num, val_batch_ind + 1, 
-        timeSince(val_start, (val_batch_ind + 1) / args.val_size)
-        ) )
 
-      if (args.val_size < len(val_dataset)) and (val_batch_ind + 1 >= args.val_size):
-        break # out of val_loader loop
+        iter += 1
 
-    val_log_mean = {}
-    for log in val_logs:
-      val_log_mean[log] = torch.Tensor(val_logs[log]).mean()
-      writer.add_scalar(
-        'val_data/{}'.format(log), val_log_mean[log], iter-1
-        )
-
-    ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
-
-    # Save checkpoint every epoch    
-    save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers,
-      filename=save_path.format(unique_name, epoch_num, iter-1) ) # mind iter-1
-
+        ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
+        # Save checkpoint every epoch    
+        save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers,
+          filename=save_path.format(unique_name, epoch_num, iter-1) ) # mind iter-1
+  return
+        
 
 def save_checkpoint(epoch, iter, models, modules, optimizers, 
                     filename='checkpoint.pth.tar'):

@@ -90,7 +90,7 @@ class Encoder(nn.Module):
     self.encoder_block=encoder_block
     self.hidden_size = hidden_size
     self.out_size = None
-    self.num_layers = 2
+    self.num_layers = 1
     
     #self.hidden_size = hidden_size
     #self.num_layers = num_layers
@@ -106,20 +106,20 @@ class Encoder(nn.Module):
         #num_layers=1, stride=1, dropout=0.2, #### skl it was 1
         bidirectional=True,
         #dilation=1,stride=1, dropout=0.2,
-        dropout=0.2,
+        dropout=0.25,
         num_layers=self.num_layers,
         batch_first=True
         )
     elif self.encoder_block == 'brnn':
-        #print("self.input_shape[0]====",self.input_shape[0])
+        #print("self.input_shape[0]====",self.input_shape)
         self.convlstm = nn.LSTM(
             self.input_shape[0], 
-            self.hidden_size, 
+            self.hidden_size,
             self.num_layers, 
             batch_first=True, 
             bidirectional=True
             )
-      # self.convlstm.apply(self._init_weights) # TODO
+      #self.convlstm.apply(self._init_weights) # TODO
     else:
       raise NotImplementedError(
         'Given argument encoder_block: {} is not implemented.'.format(self.encoder_block)
@@ -161,7 +161,7 @@ class Encoder(nn.Module):
       h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size)
       c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size)
 
-      output, _ = self.convlstm(x, (h0, c0))
+      output, hidden = self.convlstm(x, None)
 
     if interrupt == 1: 
         # _get_intermediate_outsize
@@ -171,10 +171,14 @@ class Encoder(nn.Module):
 
   # generate input sample and forward to get output shape
   def _get_intermediate_outsize(self, input_shape, interrupt):
-    input = Variable(torch.rand(1, 1, *input_shape)) # 1, 1 for batch_size and seq_len
+    if self.encoder_block == 'convbilstm':
+        input = Variable(torch.rand(1, 1, *input_shape)) # 1, 1 for batch_size and seq_len
+    elif self.encoder_block == 'brnn':
+        input = Variable(torch.rand(*input_shape)) # 1, 1 for batch_size and seq_len
     #print("input to brnn",input.shape)
     output_feat = self.forward(input, interrupt=interrupt)
     n_size = output_feat.size()[1:]
+    
     return n_size
 
 
@@ -682,8 +686,8 @@ class ViewClassifier(nn.Module):
     
     # Gradient Reversal Layer with two 
     self.grl = RevGrad(reverse=reverse)
-    self.fc1 = nn.Linear(input_size, 1024)
-    self.fc2 = nn.Linear(1024, self.num_classes)
+    self.fc1 = nn.Linear(input_size, 512)
+    self.fc2 = nn.Linear(512, self.num_classes)
 
     self.fc1.apply(self._init_weights)
     self.fc2.apply(self._init_weights)
@@ -722,6 +726,7 @@ class ActionClassifier(nn.Module):
 
   def forward(self, x):
     x = F.relu( self.fc1( x ) )
+    ##x = F.softmax( self.fc1( x ),dim=-1 )
     x = self.fc2(x)
     return x
 

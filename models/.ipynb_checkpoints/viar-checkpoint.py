@@ -42,6 +42,7 @@ def main():
   margs['flow_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5')
   margs['rgb_h5_dir'] = os.path.join(args.ntu_dir, 'nturgb+d_rgb_pngs_320x240_lanczos_h5')
   margs['depth_h5_dir'] = os.path.join(args.ntu_dir, 'MaskedDepthMaps_320x240_h5')
+  margs['flow_sm_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5_smm')
 
   # Use cuda device if available
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,11 +54,13 @@ def main():
 
   if args.for_what == 'train':
     main_train(checkpoint_files, args, margs, models)
+    return
 
   elif args.for_what == 'test':
     main_test(checkpoint_files, args, margs, models)
   elif args.for_what == 'trainAction':
     main_trainAction(checkpoint_files, args, margs, models)
+    return
 
   else:
     raise NotImplementedError(
@@ -85,8 +88,10 @@ def build_models(args, device='cuda'):
   ##################print(summary(models['encodercnn'], (1, 224, 224)))
 
   models['encoder'] = Encoder(
-    input_shape=models['encodercnn'].out_size, encoder_block='convbilstm', #encoder_block='convbilstm',  #skl
-    hidden_size=args.encoder_hid_size).to(device)
+    input_shape= models['encodercnn'].out_size, encoder_block='convbilstm', #encoder_block='convbilstm',  #skl
+    hidden_size=args.encoder_hid_size).to(device)  
+    #input_shape= (args.batch_size*args.target_length,64,49), encoder_block='brnn', #encoder_block='convbilstm',  #skl
+    #hidden_size=args.encoder_hid_size).to(device)
 
 
   models['crossviewdecodercnn'] = CNN(
@@ -110,6 +115,8 @@ def build_models(args, device='cuda'):
   models['actionclassifier'] = ActionClassifier(
     input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
     num_classes=60).to(device)
+  #print("----------models['encoder'].out_size[1:]--------",models['encoder'].out_size[1:])
+  #print("----------input_size--------", reduce(operator.mul, models['encoder'].out_size[1:]) )
 
   models['multitasklosswrapper'] = MultiTaskLossWrapper(models=models).to(device)
 
@@ -121,7 +128,8 @@ def main_train(checkpoint_files, args, margs, models):
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
-    flow_h5_dir=margs['flow_h5_dir'], 
+    flow_h5_dir=margs['flow_h5_dir'],
+    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='train', 
     visual_transform=args.visual_transform, 
@@ -137,6 +145,7 @@ def main_train(checkpoint_files, args, margs, models):
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'], 
+    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='test', 
     visual_transform=args.visual_transform, 
@@ -149,7 +158,7 @@ def main_train(checkpoint_files, args, margs, models):
   trainIters(run, args.target_modules, 
              train_loader, train_dataset, val_loader, val_dataset,
              models=models, all_models=ALL_MODELS, log_prefix=LOG_PREFIX, 
-             checkpoint_files=checkpoint_files, save_dir=args.save_dir, 
+             checkpoint_files=checkpoint_files,n_epoch=args.n_epoch, save_dir=args.save_dir, 
              args=args, device=margs['device'])
 
 
@@ -157,9 +166,10 @@ def main_trainAction(checkpoint_files, args, margs, models):
   train_loader, train_dataset = NTURGBDwithFlowLoader(
     json_file=margs['json_file'], 
     label_file=margs['label_file'], 
-    rgb_h5_dir=margs['rgb_h5_dir'], 
+    rgb_h5_dir=margs['rgb_h5_dir'],
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'], 
+    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='train', 
     visual_transform=args.visual_transform, 
@@ -174,7 +184,8 @@ def main_trainAction(checkpoint_files, args, margs, models):
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
-    flow_h5_dir=margs['flow_h5_dir'], 
+    flow_h5_dir=margs['flow_h5_dir'],
+    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='test', 
     visual_transform=args.visual_transform, 
@@ -188,7 +199,7 @@ def main_trainAction(checkpoint_files, args, margs, models):
   trainIters(runAction, args.target_modules, 
              train_loader, train_dataset, val_loader, val_dataset,
              models=models, all_models=ALL_MODELS, log_prefix=LOG_PREFIX, 
-             checkpoint_files=checkpoint_files, save_dir=args.save_dir, 
+             checkpoint_files=checkpoint_files,n_epoch=args.n_epoch, save_dir=args.save_dir, 
              args=args, device=margs['device'])
 
 
@@ -202,6 +213,7 @@ def main_test(checkpoint_files, args, margs, models):
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'], 
+    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='test', 
     visual_transform=args.visual_transform, 
@@ -266,12 +278,11 @@ def run(split, sample, models, target_modules=[], device='cuda',
       #print("-----=-=-=-pdflow_input",pdflow_input.shape)
       encodercnn_output = models['encodercnn'](pdflow_input)
   
-  
   #print("-------pdflow_input=",pdflow_input.shape)
   #print("-------encoderCNNout=",encodercnn_output.shape)
   #print("-------encoderCNNout elem=",encodercnn_output.numel())
   #print("-------models['encodercnn'].out_size=",models['encodercnn'].out_size)
-
+  
   encodercnn_output = encodercnn_output.view(
     (batch_size, target_length) + models['encodercnn'].out_size )
   #print("-------encoderCNNout=",encodercnn_output.shape)
@@ -324,16 +335,18 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
   '''
 
-    
-
+  #print('crossviewcnn_output======',crossviewcnn_output.shape)
+  #print('encoder_output======',encoder_output.shape)
   crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
+  #print('crossview_output======',crossview_output.shape)
   crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
   crossview_output = crossview_output.view(
     (batch_size, target_length) + models['crossviewdecoder'].out_size )
+  #print('crossview_output======',crossview_output.shape)
   crossview_output2 = crossview_output2.view(
     (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
-  #print('crossviewcnn_output======',crossviewcnn_output.shape)  
-  #exit()
+    
+
 
   # ReconstructionDecoder
   reconstruct_output = models['reconstructiondecoder'](encoder_output)
@@ -362,10 +375,6 @@ def run(split, sample, models, target_modules=[], device='cuda',
       if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].zero_grad()
       if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad() #actionaction needed
       if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].zero_grad() #actionaction needed
-                
-    
-
-    
 
     total_loss = 0
     #view_accuracy = 0 #skl
@@ -373,16 +382,18 @@ def run(split, sample, models, target_modules=[], device='cuda',
     crossview_loss = 0
     
     
-    #print('======crossview_output=====',crossview_output.shape)
-    #print('======sample[otherview_flows]=====',sample['otherview_flows'].shape)    
+    #print('============================crossview_output=====',crossview_output.shape)
+    #print('============================sample[otherview_flows]=====',sample['otherview_flows'].shape)    
     
     crossview_loss1 = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
+    #print('============================crossview_loss1=====',crossview_loss1) 
     crossview_loss2 = criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device))
     ####crossview_loss = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
     crossview_loss = crossview_loss1+crossview_loss2
 
     reconstruct_loss = criterions['reconstruct'](reconstruct_output, sample['flows'].to(device))
     viewclassify_loss = criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device))
+    #exit()
     
     if args.mtl:
         total_loss += (crossview_loss +  loss )   #   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
@@ -402,6 +413,9 @@ def run(split, sample, models, target_modules=[], device='cuda',
     correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
     view_accuracy += 100. * correct
     """
+    
+    
+    
     
     if set_grad: #and total_loss != 0:
       total_loss.backward()
@@ -471,21 +485,22 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
       encodercnn_output = models['encodercnn'](rgbd_input)
   elif args.modality == 'pdflow': 
       #print("-----=-=-=-sample['flows']",sample['flows'].shape)
-      #pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
-      #print("-----=-=-=-pdflow_input",pdflow_input.shape)
       pdflow_input = sample['flowsActual'].view(
         (batch_size*target_length,) + FLOW_SHAPE
         ).to(device)
-      #print("-----=-=-=-pdflow_input",pdflow_input.shape)
+      #print("-----=-=-=-pdflow_input",pdflow_input.shape) ## ([48, 3, 224, 224])
       encodercnn_output = models['encodercnn'](pdflow_input)
 
-    
- 
+  #print("-----=-=-=-encodercnn_output",encodercnn_output.shape) ## ([48, 64, 7, 7])
   encodercnn_output = encodercnn_output.view(
     (batch_size, target_length) + models['encodercnn'].out_size )
-  print("===========encodercnn_output=",encodercnn_output.shape) # ([48,128,7,7]) 
+  #encodercnn_output = encodercnn_output.view(
+  #  (batch_size* target_length,64,-1) )  
+  #print("-------------------=-=-=-encodercnn_output",encodercnn_output.shape) ## ([8, 6, 64, 7, 7])
+  
+  ###print("===========encodercnn_output=",encodercnn_output.shape)
   encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
-  print("===========encoder_output=",encoder_output.shape) # ([48,128,7,7]) 
+  #print("===========encoder_output=",encoder_output.shape) # ([8, 6, 128, 7, 7])
   if split == 'test':
     result['output']['encoder_output'] = encoder_output
     
@@ -493,24 +508,26 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
   encoder_output = encoder_output.contiguous().view(
     (batch_size*target_length,) + models['encoder'].out_size[1:] )
   
-  #encoder_output = encoder_output.mean(1)
-
-  print("===========encoder_output=",encoder_output.shape) # ([48,128,7,7])
+  #########################encoder_output = encoder_output.mean(1)
+  ###print("===========encoder_output=",encoder_output.shape) # ([batch,128,7,7])
   
-
   # ActionClassifier
   actionclassify_output = models['actionclassifier'](
-    encoder_output.view(batch_size*target_length,-1) 
-    )
-  #print("actionclassify_output=",actionclassify_output.shape,"\n")
+    encoder_output.view(batch_size*target_length,-1) )
+  
+  ###########actionclassify_output = models['actionclassifier'](
+  ###########  encoder_output.view(batch_size,-1) )
+  ###print("actionclassify_output=",actionclassify_output.shape,"\n")
   actionclassify_output = actionclassify_output.view(
     (batch_size, target_length) + (models['actionclassifier'].num_classes,) )
-  #print("actionclassify_output=",actionclassify_output.shape,"\n")
+  ####################actionclassify_output = actionclassify_output.view(
+  ####################  (batch_size,) + (models['actionclassifier'].num_classes,) )
+  ###print("actionclassify_output=",actionclassify_output.shape,"\n")
 
   if split in ['train', 'validate']:
     if set_grad:
-      if 'encodercnn' in target_modules: optimizers['encodercnn'].zero_grad()
       if not args.fix_encoder:
+          if 'encodercnn' in target_modules: optimizers['encodercnn'].zero_grad()
           if 'encoder' in target_modules: optimizers['encoder'].zero_grad()
       if 'actionclassifier' in target_modules: optimizers['actionclassifier'].zero_grad() #actionaction needed
     
@@ -519,17 +536,18 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     action_loss = 0
     correct_action = 0
     actionclassify_mean = 0
-
-      
+    
+    
     #actionclassify_output = torch.autograd.Variable(torch.mean(actionclassify_output, 1, True).repeat(1, target_length, 1) ,requires_grad=True)
     
     
-    print("===========actionclassify_output=",actionclassify_output.shape) # ([batch,T, 60])
-    
+    #print("===========actionclassify_output=",actionclassify_output) # ([batch,T, 60])
+    #print("===========actionclassify_output=",actionclassify_output.shape)
+    ### ??
+    #exit()
     actionclassify_output = actionclassify_output.mean(1)
-
-    print("===========actionclassify_output=",actionclassify_output.shape) # ([batch, 60])
-    exit()
+    #print("===========actionclassify_output=",actionclassify_output.shape) # ([batch, 60])
+    
     #print("actionclassify_output=",actionclassify_output)
     #print("actionclassify_output.shape=",actionclassify_output.shape,"\n")
     
@@ -550,7 +568,7 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     else:
       #print("=============sample[action_label]",sample['action_label'].shape)
       action_loss = criterions['actionclassify'](actionclassify_output, sample['action_label'].view(batch_size).to(device))
-      #print("===========action_loss=",action_loss.shape)
+      #print("===========action_loss=",action_loss)
       action_accuracy = criterions['action_accuracy'](actionclassify_output.to(device))
       #print("===========action_accuracy=",action_accuracy.shape)
       actionclassify_max_idx = torch.argmax(action_accuracy, 1, keepdim=False) #2, keepdim=False)
@@ -595,10 +613,14 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     action_accuracy = 100. * correct_action
  
     
-    print("=====================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
+    #print("=====================================================================  action_loss",action_loss.item()," action_accuracy=",action_accuracy.item())
+    #encoder_output.register_hook(lambda grad: print("-------------------------------encoder_output",grad.shape,torch.min(grad),torch.max(grad) ) )
+    #actionclassify_output.register_hook(lambda grad: print("-------------------------------actionclassify_output",grad.shape,torch.min(grad),torch.max(grad)))
     
     if set_grad and action_loss != 0:
       action_loss.backward()
+      #torch.nn.utils.clip_grad_norm(models['encoder'].parameters(), max_norm=1)
+      
       if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
       if not args.fix_encoder:
           if 'encoder' in target_modules: optimizers['encoder'].step()
@@ -629,6 +651,14 @@ def get_args():
   parser.add_argument('--mtl', dest='mtl',
     default=False, action='store_true',
     help='Disable MTL')
+    
+  parser.add_argument('--n-epoch', dest='n_epoch',
+    type=int, default=8, help='total epochs')
+    
+  # Sanity check for a single batch to overfit
+  parser.add_argument('--single-batch', dest='single_batch',
+    default=False, action='store_true',
+    help='Disable single batch training mode')
     
   # Fix encoder weights
   parser.add_argument('--fix-encoder', dest='fix_encoder',
