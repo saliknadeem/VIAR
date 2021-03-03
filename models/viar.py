@@ -22,7 +22,12 @@ from networks import CNN, Encoder, CrossViewDecoder, \
 
 sys.path.append('..')
 #from dataloader.NTURGBDwithFlowLoader import NTURGBDwithFlowLoader
-from dataloader.NTURGBDwithFlowLoaderVal import NTURGBDwithFlowLoader, NTURGBDwithFlowLoaderValidation
+from dataloader.NTURGBDwithFlowLoaderVal import NTURGBDwithFlowLoaderCSValidation ,NTURGBDwithFlowLoaderCS
+
+from dataloader.NTURGBDwithFlowLoader_crossview import NTURGBDwithFlowLoaderCV
+
+
+
 from utils.utils import setCheckpointFileDict, testIters, trainIters
 
 RGB_INPUT_SHAPE = (3,224,224)
@@ -37,12 +42,12 @@ def main():
   args = get_args()
 
   margs = {}
-  margs['json_file'] = os.path.join(args.ntu_dir, 'ntu_rgbd_videonames.min.json')
+  margs['json_file'] = os.path.join(args.ntu_dir, 'ntu_rgbd_videonames_reduced_all.json')#'ntu_rgbd_videonames.min.json')
   margs['label_file'] = os.path.join(args.ntu_dir, 'ntu_rgbd_action_labels.txt')
-  margs['flow_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5')
+  margs['flow_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5')# '3DFlow')  #'Extracted3DFlowH5')
   margs['rgb_h5_dir'] = os.path.join(args.ntu_dir, 'nturgb+d_rgb_pngs_320x240_lanczos_h5')
   margs['depth_h5_dir'] = os.path.join(args.ntu_dir, 'MaskedDepthMaps_320x240_h5')
-  margs['flow_sm_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5_smm')
+  #margs['flow_sm_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5_smm')
 
   # Use cuda device if available
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -123,13 +128,12 @@ def build_models(args, device='cuda'):
   return models
 
 def main_train(checkpoint_files, args, margs, models):
-  train_loader, train_dataset = NTURGBDwithFlowLoader(
+  train_loader, train_dataset = NTURGBDwithFlowLoaderCS(
     json_file=margs['json_file'], 
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'],
-    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='train', 
     visual_transform=args.visual_transform, 
@@ -139,13 +143,12 @@ def main_train(checkpoint_files, args, margs, models):
     pin_memory=True
     ) 
 
-  val_loader, val_dataset = NTURGBDwithFlowLoader(
+  val_loader, val_dataset = NTURGBDwithFlowLoaderCS(
     json_file=margs['json_file'], 
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'], 
-    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='test', 
     visual_transform=args.visual_transform, 
@@ -163,13 +166,12 @@ def main_train(checkpoint_files, args, margs, models):
 
 
 def main_trainAction(checkpoint_files, args, margs, models):
-  train_loader, train_dataset = NTURGBDwithFlowLoader(
+  train_loader, train_dataset = NTURGBDwithFlowLoaderCS(
     json_file=margs['json_file'], 
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'],
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'], 
-    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='train', 
     visual_transform=args.visual_transform, 
@@ -179,13 +181,12 @@ def main_trainAction(checkpoint_files, args, margs, models):
     pin_memory=True
     ) 
 
-  val_loader, val_dataset = NTURGBDwithFlowLoaderValidation(
+  val_loader, val_dataset = NTURGBDwithFlowLoaderCSValidation(
     json_file=margs['json_file'], 
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'],
-    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='test', 
     visual_transform=args.visual_transform, 
@@ -207,13 +208,12 @@ def main_trainAction(checkpoint_files, args, margs, models):
 
 
 def main_test(checkpoint_files, args, margs, models):
-  test_loader, test_dataset = NTURGBDwithFlowLoader(
+  test_loader, test_dataset = NTURGBDwithFlowLoaderCS(
     json_file=margs['json_file'], 
     label_file=margs['label_file'], 
     rgb_h5_dir=margs['rgb_h5_dir'], 
     depth_h5_dir=margs['depth_h5_dir'], 
     flow_h5_dir=margs['flow_h5_dir'], 
-    flow_sm_h5_dir=margs['flow_sm_h5_dir'],
     target_length=args.target_length, 
     subset='test', 
     visual_transform=args.visual_transform, 
@@ -638,7 +638,6 @@ def get_args():
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-  
   # Input Modality
   parser.add_argument('--modality', dest='modality', 
     default='rgb', help='RGB,Depth,PDFlow')

@@ -337,17 +337,18 @@ class NTURGBDwithFlow(Dataset):
       #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
       flowActual = torch.from_numpy(f)
       flow = torch.from_numpy(f)
-      #flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+      #flow = cropND(flow, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop  
+      flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
       ##### Resize operation using interpolate on tensors
-      flow = np.transpose(flow, (0, 2, 1))
+      '''flow = np.transpose(flow, (0, 2, 1))
       flow = F.interpolate(flow, self.side_size // self.patch_size)
       flow = np.transpose(flow, (0, 2, 1))
-      flow = F.interpolate(flow, self.side_size // self.patch_size)
+      flow = F.interpolate(flow, self.side_size // self.patch_size)'''
       ######################
       flow = np.transpose(flow, (2,0,1))
       flowActual = np.transpose(flowActual, (2,0,1)) 
-      flowActual = flowActual * 1000
-      flow = flow * 1000 # multiply 50 to "keep proper scale" according to [1]
+      flowActual = flowActual * 50
+      flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flowsActual.append(torch.FloatTensor(flowActual))
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
@@ -449,19 +450,22 @@ class NTURGBDwithFlow(Dataset):
           self.flow_h5_dir, otherview_videoname_index + '_3dflow.h5')
         otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r', libver='latest', swmr=True)
         for f in otherview_flow_h5['flow'][otherview_frame_indices]:
+          #print("-------------flow------------", flow.size())
           #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
           flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+          #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
           flow = np.transpose(flow, (2,0,1))
-          flow = flow * 1000 # multiply 50 to "keep proper scale" according to [1]
+          flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
           otherview_flows.append(torch.FloatTensor(flow))
         
-    
+    #print("-------------otherview_flows------------", len(otherview_flows)) 
+    #print("-------------otherview_flows------------", flow.size())
     otherview_depths = torch.stack(otherview_depths)
     otherview_flows = torch.stack(otherview_flows)
 
     
     
-'''    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    '''    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r', libver='latest', swmr=True)
     flows = []
     for f in flow_h5['flow'][frame_indices]:

@@ -45,6 +45,42 @@ def timeSince(since):
   s = now - since
   return '%s' % (asMinutes(s))
 
+def flow_text_to_h5(args, videoname_ind, videoname, length):
+  start_time = time.time()
+  video_dir = os.path.join(args.top_dir, videoname)
+  files = os.listdir(video_dir)
+  files = [os.path.join(video_dir, f) for f in files if f.startswith('3dflow_results') and f.endswith('.txt')]
+  files = sorted(files)
+
+  target_height = input_height
+  target_width = input_width
+  if args.patch_size > 0:
+    target_height = input_height // args.patch_size
+    target_width = input_width // args.patch_size
+
+  outfile_path = os.path.join(args.output_dir, videoname + '_3dflow.h5')
+  outfile = h5py.File(outfile_path, 'w')
+  dset = outfile.create_dataset('flow', 
+    (len(files),target_height,target_width,3), 
+    maxshape=(len(files),target_height,target_width,3), 
+    chunks=True, dtype='f4')
+
+  for f_ind, f in enumerate(files):
+    # read jpeg as binary and put into h5
+    flowtxt = np.loadtxt(f, dtype='f8')
+    flow = flowtxt[:,2:5] # remove x, y coordinate speicified in text files
+    flow = flow.reshape((input_height,input_width,3)) # 3 for x,y,z in 3d flow
+    flow = bin_ndarray(flow, 
+      new_shape=(target_height,target_width,3), 
+      operation='mean'
+      )
+    dset[f_ind,:] = flow[:]
+
+  outfile.close()
+  print('{}/{}. converting flows of {} to h5 done...{}'.format(
+    videoname_ind+1, length, videoname, timeSince(start_time)) )
+    
+    
 def bin_ndarray(ndarray, new_shape, operation='sum'):
   """
   Bins an ndarray in all axes based on the target shape, by summing or
@@ -81,40 +117,7 @@ def bin_ndarray(ndarray, new_shape, operation='sum'):
     ndarray = op(-1*(i+1))
   return ndarray
 
-def flow_text_to_h5(args, videoname_ind, videoname, length):
-  start_time = time.time()
-  video_dir = os.path.join(args.top_dir, videoname)
-  files = os.listdir(video_dir)
-  files = [os.path.join(video_dir, f) for f in files if f.startswith('3dflow_results') and f.endswith('.txt')]
-  files = sorted(files)
 
-  target_height = input_height
-  target_width = input_width
-  if args.patch_size > 0:
-    target_height = input_height // args.patch_size
-    target_width = input_width // args.patch_size
-
-  outfile_path = os.path.join(args.output_dir, videoname + '_3dflow.h5')
-  outfile = h5py.File(outfile_path, 'w')
-  dset = outfile.create_dataset('flow', 
-    (len(files),target_height,target_width,3), 
-    maxshape=(len(files),target_height,target_width,3), 
-    chunks=True, dtype='f4')
-
-  for f_ind, f in enumerate(files):
-    # read jpeg as binary and put into h5
-    flowtxt = np.loadtxt(f, dtype='f8')
-    flow = flowtxt[:,2:5] # remove x, y coordinate speicified in text files
-    flow = flow.reshape((input_height,input_width,3)) # 3 for x,y,z in 3d flow
-    flow = bin_ndarray(flow, 
-      new_shape=(target_height,target_width,3), 
-      operation='mean'
-      )
-    dset[f_ind,:] = flow[:]
-
-  outfile.close()
-  print('{}/{}. converting flows of {} to h5 done...{}'.format(
-    videoname_ind+1, length, videoname, timeSince(start_time)) )
 
 def get_args():
   parser = argparse.ArgumentParser(

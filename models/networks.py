@@ -23,7 +23,7 @@ import math
 
 
 class CNN(nn.Module):
-  def __init__(self, input_shape, model_name='resnet18', input_channel=3):
+  def __init__(self, input_shape, model_name='resnet50', input_channel=3):
     super(CNN, self).__init__()
     self.model_name = model_name
     self.out_size = None
@@ -106,7 +106,7 @@ class Encoder(nn.Module):
         #num_layers=1, stride=1, dropout=0.2, #### skl it was 1
         bidirectional=True,
         #dilation=1,stride=1, dropout=0.2,
-        dropout=0.25,
+        dropout=0.3,
         num_layers=self.num_layers,
         batch_first=True
         )
@@ -686,8 +686,8 @@ class ViewClassifier(nn.Module):
     
     # Gradient Reversal Layer with two 
     self.grl = RevGrad(reverse=reverse)
-    self.fc1 = nn.Linear(input_size, 512)
-    self.fc2 = nn.Linear(512, self.num_classes)
+    self.fc1 = nn.Linear(input_size, 128)
+    self.fc2 = nn.Linear(128, self.num_classes)
 
     self.fc1.apply(self._init_weights)
     self.fc2.apply(self._init_weights)
@@ -711,11 +711,11 @@ class ActionClassifier(nn.Module):
     super(ActionClassifier, self).__init__()
     self.num_classes = num_classes
     
-    self.fc1 = nn.Linear(input_size, 512)
-    self.fc2 = nn.Linear(512, self.num_classes)
+    self.fc1 = nn.Linear(input_size, self.num_classes)
+    #self.fc2 = nn.Linear(128, self.num_classes)
 
     self.fc1.apply(self._init_weights)
-    self.fc2.apply(self._init_weights)
+    #self.fc2.apply(self._init_weights)
 
   def _init_weights(self, m):
     if type(m) == nn.Linear:
@@ -725,9 +725,9 @@ class ActionClassifier(nn.Module):
       nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
   def forward(self, x):
-    x = F.relu( self.fc1( x ) )
+    #x = F.relu( self.fc1( x ) )
     ##x = F.softmax( self.fc1( x ),dim=-1 )
-    x = self.fc2(x)
+    x = self.fc1(x)
     return x
 
 

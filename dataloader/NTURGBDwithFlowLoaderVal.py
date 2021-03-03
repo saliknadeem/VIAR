@@ -37,7 +37,6 @@ class NTURGBDwithFlow(Dataset):
     rgb_h5_dir, 
     depth_h5_dir, 
     flow_h5_dir, 
-    flow_sm_h5_dir,
     target_length, 
     subset, 
     visual_transform='normalize'
@@ -70,7 +69,6 @@ class NTURGBDwithFlow(Dataset):
     self.rgb_h5_dir = rgb_h5_dir
     self.depth_h5_dir = depth_h5_dir
     self.flow_h5_dir = flow_h5_dir
-    self.flow_sm_h5_dir = flow_sm_h5_dir
     self.target_length = target_length
     self.subset = subset
     self.visual_transform = visual_transform
@@ -264,7 +262,8 @@ class NTURGBDwithFlow(Dataset):
     if self.visual_transform is None:
       self.rgb_transform = transforms.Compose([
                               transforms.ToPILImage(),
-                              transforms.CenterCrop(self.side_size),
+                              #transforms.CenterCrop(self.side_size),
+                              transforms.Resize((self.side_size,self.side_size),interpolation=Image.NEAREST),
                               transforms.ToTensor()
                               ])
       '''self.flow_transform = transforms.Compose([
@@ -275,7 +274,8 @@ class NTURGBDwithFlow(Dataset):
     elif self.visual_transform == 'normalize':
       self.rgb_transform = transforms.Compose([
                               transforms.ToPILImage(),
-                              transforms.CenterCrop(self.side_size),
+                              #transforms.CenterCrop(self.side_size),
+                              transforms.Resize((self.side_size,self.side_size),interpolation=Image.NEAREST),
                               transforms.ToTensor(),
                               #transforms.Normalize((0.5,0.5,0.5),
                               #                     (0.5,0.5,0.5))
@@ -351,7 +351,7 @@ class NTURGBDwithFlow(Dataset):
     
     #print("-------------depths------------", depths.size())
     
-    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    '''flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r', libver='latest', swmr=True)
     #####flows = []
     flowsActual = []
@@ -360,18 +360,19 @@ class NTURGBDwithFlow(Dataset):
       #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
       flowActual = torch.from_numpy(f)
       #flowActual = cropND(flowActual, (self.side_size, self.side_size, 3))
+      flowActual = resize(flowActual, (224, 224))
       flowActual = np.transpose(flowActual, (2,0,1)) 
-      flowActual = flowActual * 500
+      flowActual = flowActual * 50
       #flowActual = self.flow_transform(flowActual)
       #flow = torch.from_numpy(f)
-      #####flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+     
       
       ##### Resize operation using interpolate on tensors
-      #'''flow = np.transpose(flow, (2, 0, 1))
+      #flow = np.transpose(flow, (2, 0, 1))
       #flow = F.interpolate(flow, self.side_size // self.patch_size)
       #flow = np.transpose(flow, (2, 0, 1))
       #flow = F.interpolate(flow, self.side_size // self.patch_size)
-      #flow = np.transpose(flow, (1,0,2))'''
+      #flow = np.transpose(flow, (1,0,2))
       ######################
       #####flow = np.transpose(flow, (2,0,1))
       
@@ -386,7 +387,7 @@ class NTURGBDwithFlow(Dataset):
     #print("-------------flows------------", flows.size())
     
     
-    #############################################print("=================actual={}/{}==={}===".format(frame_indices,length,videoname),idx )
+    #############################################print("=================actual={}/{}=={}===".format(frame_indices,length,videoname),idx )
     
     flow_sm_h5_path = os.path.join(self.flow_sm_h5_dir, videoname + '_3dflow.h5')
     flow_sm_h5 = h5py.File(flow_sm_h5_path, 'r', libver='latest', swmr=True)
@@ -398,7 +399,38 @@ class NTURGBDwithFlow(Dataset):
       flow = flow #* 50 # multiply 50 to "keep proper scale" according to [1]
       #flow[flow != 0] = flow[flow != 0] + 1.1980
       flows.append(torch.FloatTensor(flow))
-    flows = torch.stack(flows)   
+    flows = torch.stack(flows)''' 
+
+    
+
+    flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
+    flow_h5 = h5py.File(flow_h5_path, 'r', libver='latest', swmr=True)
+    flows = []
+    flowsActual = []
+    for f in flow_h5['flow'][frame_indices]:
+      #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
+      flowActual = torch.from_numpy(f)
+      flow = torch.from_numpy(f)
+      flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+      #flow = cropND(flow, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+      ##### Resize operation using interpolate on tensors
+      '''flow = np.transpose(flow, (0, 2, 1))
+      flow = F.interpolate(flow, self.side_size // self.patch_size)
+      flow = np.transpose(flow, (0, 2, 1))
+      flow = F.interpolate(flow, self.side_size // self.patch_size)'''
+      ######################
+      flow = np.transpose(flow, (2,0,1))
+      flowActual = np.transpose(flowActual, (2,0,1)) 
+      flowActual = flowActual * 50
+      flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+      flowsActual.append(torch.FloatTensor(flowActual))
+      flows.append(torch.FloatTensor(flow))
+    flows = torch.stack(flows)
+    flowsActual = torch.stack(flowsActual)
+    
+    
+    
 
 
     camera_id = int(videoname[5:8])
@@ -471,7 +503,7 @@ class NTURGBDwithFlow(Dataset):
     #    print("length=",length,"- otherview=",otherview_length,"- video=",videoname, "- other-video=",otherview_videoname)
     #    print("frame_indices=", frame_indices)
     
-    otherview_frame_indices = frame_indices
+    '''otherview_frame_indices = frame_indices
     
     otherview_depths = []
     otherview_flows = []
@@ -507,9 +539,48 @@ class NTURGBDwithFlow(Dataset):
         
     
     otherview_depths = torch.stack(otherview_depths)
+    otherview_flows = torch.stack(otherview_flows)'''
+
+
+    
+    
+    
+    otherview_frame_indices = frame_indices
+    
+    otherview_depths = []
+    otherview_flows = []
+    for otherview_videoname_index in otherview_videonames:
+
+        otherview_depth_h5_path = os.path.join(
+          self.depth_h5_dir, otherview_videoname_index + '_maskeddepth_pngs.h5')
+        otherview_depth_h5 = h5py.File(otherview_depth_h5_path, 'r', libver='latest', swmr=True)
+ 
+        for byte in otherview_depth_h5['pngs'][otherview_frame_indices]:
+          depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+          depth = cropND(depth, (self.side_size, self.side_size))
+          depth = np.expand_dims(depth, axis=0)
+          depth = depth.astype(np.float32) / 65535
+          depth = torch.FloatTensor(depth)
+          otherview_depths.append(depth)
+        
+
+        #print("-------------otherview_depths------------", otherview_depths.size())   
+
+
+        otherview_flow_h5_path = os.path.join(
+          self.flow_h5_dir, otherview_videoname_index + '_3dflow.h5')
+        otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r', libver='latest', swmr=True)
+        for f in otherview_flow_h5['flow'][otherview_frame_indices]:
+          #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+          flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+          flow = np.transpose(flow, (2,0,1))
+          flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+          otherview_flows.append(torch.FloatTensor(flow))
+        
+    
+    otherview_depths = torch.stack(otherview_depths)
     otherview_flows = torch.stack(otherview_flows)
-
-
+    
     
     
     ##print("-------------otherview_depths------------", otherview_depths.size())   
@@ -540,18 +611,17 @@ class NTURGBDwithFlow(Dataset):
 
 
 
-    """
-    print("-------------videoname------------", videoname)
+    '''    print("-------------videoname------------", videoname)
     print("-------------RGB------------", rgb.size())
     print("-------------RGBs------------", rgbs.size())
     print("-------------depths------------", depths.size())
     print("-------------flows------------", flows.size())
+    print("-------------flowsActual------------", flowsActual.size())
     print("-------------otherview_depths------------", otherview_depths[0:6,:,:,:].size())
     print("-------------otherview_flows------------", otherview_depths[0:6,:,:,:].size())
     print("-------------otherview_depths2------------", otherview_depths[6:,:,:,:].size())
     print("-------------otherview_flows2------------", otherview_depths[6:,:,:,:].size())
-    print("-------------action_label------------", action_label)
-    """
+    print("-------------action_label------------", action_label)'''
     
     sample = {'action_id': action_id,
               'camera_id': camera_id,
@@ -583,13 +653,12 @@ def cropND(img, bounding):
 
 
 
-def NTURGBDwithFlowLoader(
+def NTURGBDwithFlowLoaderCS(
     json_file, 
     label_file, 
     rgb_h5_dir, 
     depth_h5_dir, 
     flow_h5_dir,
-    flow_sm_h5_dir,
     target_length, 
     subset, 
     visual_transform='normalize', 
@@ -606,7 +675,6 @@ def NTURGBDwithFlowLoader(
     rgb_h5_dir=rgb_h5_dir, 
     depth_h5_dir=depth_h5_dir, 
     flow_h5_dir=flow_h5_dir, 
-    flow_sm_h5_dir=flow_sm_h5_dir,
     target_length=target_length, 
     subset=subset, 
     visual_transform=visual_transform
@@ -625,13 +693,12 @@ def NTURGBDwithFlowLoader(
 
 
 
-def NTURGBDwithFlowLoaderValidation(
+def NTURGBDwithFlowLoaderCSValidation(
     json_file, 
     label_file, 
     rgb_h5_dir, 
     depth_h5_dir, 
     flow_h5_dir,
-    flow_sm_h5_dir,
     target_length, 
     subset, 
     visual_transform='normalize', 
@@ -648,7 +715,6 @@ def NTURGBDwithFlowLoaderValidation(
     rgb_h5_dir=rgb_h5_dir, 
     depth_h5_dir=depth_h5_dir, 
     flow_h5_dir=flow_h5_dir, 
-    flow_sm_h5_dir=flow_sm_h5_dir,
     target_length=target_length, 
     subset=subset, 
     visual_transform=visual_transform
@@ -682,7 +748,6 @@ class NTURGBDwithFlowValidation(Dataset):
     rgb_h5_dir, 
     depth_h5_dir, 
     flow_h5_dir,
-    flow_sm_h5_dir,
     target_length, 
     subset, 
     visual_transform='normalize'
@@ -699,7 +764,6 @@ class NTURGBDwithFlowValidation(Dataset):
     self.rgb_h5_dir = rgb_h5_dir
     self.depth_h5_dir = depth_h5_dir
     self.flow_h5_dir = flow_h5_dir
-    self.flow_sm_h5_dir = flow_sm_h5_dir
     self.target_length = target_length
     self.subset = subset
     self.visual_transform = visual_transform
@@ -778,7 +842,8 @@ class NTURGBDwithFlowValidation(Dataset):
     if self.visual_transform is None:
       self.rgb_transform = transforms.Compose([
                               transforms.ToPILImage(),
-                              transforms.CenterCrop(self.side_size),
+                              #transforms.CenterCrop(self.side_size),
+                              transforms.Resize((self.side_size,self.side_size),interpolation=Image.NEAREST),
                               transforms.ToTensor()
                               ])
       '''self.flow_transform = transforms.Compose([
@@ -789,7 +854,8 @@ class NTURGBDwithFlowValidation(Dataset):
     elif self.visual_transform == 'normalize':
       self.rgb_transform = transforms.Compose([
                               transforms.ToPILImage(),
-                              transforms.CenterCrop(self.side_size),
+                              #transforms.CenterCrop(self.side_size),
+                              transforms.Resize((self.side_size,self.side_size),interpolation=Image.NEAREST),
                               transforms.ToTensor(),
                               transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                    std=[0.229, 0.224, 0.225])
@@ -869,8 +935,6 @@ class NTURGBDwithFlowValidation(Dataset):
     #####flows = []
     flowsActual = []
     #####
-    flow_sm_h5_path = os.path.join(self.flow_sm_h5_dir, videoname + '_3dflow.h5')
-    flow_sm_h5 = h5py.File(flow_sm_h5_path, 'r', libver='latest', swmr=True)
     flows = []
     #-----
     for frame_indices in frames:
@@ -879,7 +943,7 @@ class NTURGBDwithFlowValidation(Dataset):
         #flow = skimage.measure.block_reduce(f, (8,8), np.mean)
         flowActual = torch.from_numpy(f)
         #flowActual = cropND(flowActual, (self.side_size, self.side_size, 3)) 
-        flowActual = flowActual * 500
+        flowActual = flowActual * 50
         #flowActual = self.flow_transform(flowActual)
         #flow = torch.from_numpy(f)
         #####flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
@@ -894,12 +958,13 @@ class NTURGBDwithFlowValidation(Dataset):
         #flowActual = np.transpose(flowActual, (2,0,1))
         #flowActual[flowActual != 0] = flowActual[flowActual != 0] + 3.1465
         #####flow = flow * 1000 # multiply 50 to "keep proper scale" according to [1]
+        flowActual = resize(flowActual, (224, 224))
         flowActual = np.transpose(flowActual, (2,0,1))
         flowsActual.append(torch.FloatTensor(flowActual))
         #####flows.append(torch.FloatTensor(flow))
-      for f in flow_sm_h5['flow'][list(frame_indices)]:
         flow = torch.from_numpy(f)
-        flow = cropND(flow, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
+        flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+        #flow = cropND(flow, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
         flow = np.transpose(flow, (2,0,1))
         flow = flow #* 50 # multiply 50 to "keep proper scale" according to [1]
         #flow[flow != 0] = flow[flow != 0] + 1.1980
@@ -1001,7 +1066,7 @@ class NTURGBDwithFlowValidation(Dataset):
 
 
         otherview_flow_h5_path = os.path.join(
-          self.flow_sm_h5_dir, otherview_videoname_index + '_3dflow.h5')
+          self.flow_h5_dir, otherview_videoname_index + '_3dflow.h5')
         otherview_flow_h5 = h5py.File(otherview_flow_h5_path, 'r', libver='latest', swmr=True)
         for frame_indices in otherview_frame_indices:        
             for f in otherview_flow_h5['flow'][list(frame_indices)]:

@@ -527,7 +527,7 @@ def cropND(img, bounding):
     slices = tuple(map(slice, start, end))
     return img[slices]
 
-def NTURGBDwithFlowLoader(
+def NTURGBDwithFlowLoaderCV(
     json_file, 
     label_file, 
     rgb_h5_dir, 
