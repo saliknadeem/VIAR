@@ -38,6 +38,9 @@ def resize_images(args, ind, videoname, length):
     input_image_path = os.path.join(images_dir, image)
     target_img_path = os.path.join(target_dir, image)
     im = cv2.imread(input_image_path, cv2.IMREAD_GRAYSCALE) # -1 for read image AS IS, e.g. 16bit monochrome
+    
+    #im = cv2.equalizeHist(im) #skl
+    
     im = cv2.resize(im, (args.target_width, args.target_height))
     cv2.imwrite(target_img_path, im)
 

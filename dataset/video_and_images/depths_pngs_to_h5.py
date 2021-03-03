@@ -68,7 +68,7 @@ def pngs_to_h5(args, videoname_ind, videoname, length):
     # read png as binary and put into h5
     png = open(f, 'rb')
     binary_data = png.read()
-    dset[f_ind] = np.fromstring(binary_data, dtype=np.uint8)
+    dset[f_ind] = np.fromstring(binary_data, dtype=np.uint16)
     png.close()
 
   outfile.close()
