@@ -7,6 +7,7 @@ import math
 import argparse
 import numpy as np
 import collections
+import cv2 as cv
 
 # Parameters
 input_height = 240
@@ -85,22 +86,18 @@ def bin_ndarray(ndarray, new_shape, operation='sum'):
   """
   Bins an ndarray in all axes based on the target shape, by summing or
       averaging.
-
   Number of output dimensions must match number of input dimensions and 
       new axes must divide old ones.
-
   Example
   -------
   >>> m = np.arange(0,100,1).reshape((10,10))
   >>> n = bin_ndarray(m, new_shape=(5,5), operation='sum')
   >>> print(n)
-
   [[ 22  30  38  46  54]
    [102 110 118 126 134]
    [182 190 198 206 214]
    [262 270 278 286 294]
    [342 350 358 366 374]]
-
   """
   operation = operation.lower()
   if not operation in ['sum', 'mean']:
@@ -118,6 +115,36 @@ def bin_ndarray(ndarray, new_shape, operation='sum'):
   return ndarray
 
 
+  target_height = 224 #input_height
+  target_width = 224 #input_width
+  if args.patch_size > 0:
+    target_height = input_height // args.patch_size
+    target_width = input_width // args.patch_size
+
+  outfile_path = os.path.join(args.output_dir, videoname + '_3dflow.h5')
+  outfile = h5py.File(outfile_path, 'w')
+  dset = outfile.create_dataset('flow', 
+    (len(files),target_height,target_width,3), 
+    maxshape=(len(files),target_height,target_width,3), 
+    chunks=True, dtype='f4',compression= "gzip")#"lzf")
+
+  for f_ind, f in enumerate(files):
+    # read jpeg as binary and put into h5
+    flowtxt = np.loadtxt(f, dtype='f8')
+    flow = flowtxt[:,2:5] # remove x, y coordinate speicified in text files
+    #print("flow",flow.shape)
+    flow = flow.reshape((input_height,input_width,3)) # 3 for x,y,z in 3d flow
+    #print("flow",flow.shape)
+    '''flow = bin_ndarray(flow, 
+      new_shape=(target_height,target_width,3), 
+      operation='mean'
+      )'''
+    flow = cv.resize(flow, (224,224), interpolation = cv.INTER_AREA)
+    dset[f_ind,:] = flow[:]
+
+  outfile.close()
+  print('{}/{}. converting flows of {} to h5 done...{}'.format(
+    videoname_ind+1, length, videoname, timeSince(start_time)) )
 
 def get_args():
   parser = argparse.ArgumentParser(
@@ -140,7 +167,7 @@ def get_args():
 
   # Parameters
   parser.add_argument('--patch-size', dest='patch_size',
-    default=8, type=int,
+    default=0, type=int,
     help='To make flow as low-dimensional signal, calculate mean of each '
          'non-overlapping (patch_size x patch_size) patch. Choose value'
          'that can divide both height and width.'
