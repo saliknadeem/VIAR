@@ -105,8 +105,8 @@ class Encoder(nn.Module):
         kernel_size=7,  # Int or List[int]
         #num_layers=1, stride=1, dropout=0.2, #### skl it was 1
         bidirectional=True,
-        #dilation=1,stride=1, dropout=0.2,
-        dropout=0.3,
+        #dilation=1,stride=1, dropout=0.25,
+        dropout=0.2,
         num_layers=self.num_layers,
         batch_first=True
         )
@@ -686,11 +686,11 @@ class ViewClassifier(nn.Module):
     
     # Gradient Reversal Layer with two 
     self.grl = RevGrad(reverse=reverse)
-    self.fc1 = nn.Linear(input_size, 128)
-    self.fc2 = nn.Linear(128, self.num_classes)
+    self.fc1 = nn.Linear(input_size, self.num_classes)
+    #self.fc2 = nn.Linear(128, self.num_classes)
 
     self.fc1.apply(self._init_weights)
-    self.fc2.apply(self._init_weights)
+    #self.fc2.apply(self._init_weights)
 
   def _init_weights(self, m):
     if type(m) == nn.Linear:
@@ -701,8 +701,8 @@ class ViewClassifier(nn.Module):
 
   def forward(self, x):
     x = self.grl(x)
-    x = F.relu( self.fc1( x ) )
-    x = self.fc2(x)
+    #x = F.relu( self.fc1( x ) )
+    x = self.fc1(x)
     return x
 
 

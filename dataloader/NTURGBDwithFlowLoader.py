@@ -338,7 +338,8 @@ class NTURGBDwithFlow(Dataset):
       flowActual = torch.from_numpy(f)
       flow = torch.from_numpy(f)
       #flow = cropND(flow, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop  
-      flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+      #flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+      flow = cv2.resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size), interpolation = cv2.INTER_AREA)
       ##### Resize operation using interpolate on tensors
       '''flow = np.transpose(flow, (0, 2, 1))
       flow = F.interpolate(flow, self.side_size // self.patch_size)
@@ -347,8 +348,8 @@ class NTURGBDwithFlow(Dataset):
       ######################
       flow = np.transpose(flow, (2,0,1))
       flowActual = np.transpose(flowActual, (2,0,1)) 
-      flowActual = flowActual * 50
-      flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+      flowActual = flowActual * 10
+      flow = flow * 10 # multiply 50 to "keep proper scale" according to [1]
       flowsActual.append(torch.FloatTensor(flowActual))
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
@@ -452,10 +453,11 @@ class NTURGBDwithFlow(Dataset):
         for f in otherview_flow_h5['flow'][otherview_frame_indices]:
           #print("-------------flow------------", flow.size())
           #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
-          flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+          #flow = resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size))
+          flow = cv2.resize(f, (self.side_size // self.patch_size, self.side_size // self.patch_size), interpolation = cv2.INTER_AREA)
           #flow = cropND(f, (self.side_size // self.patch_size, self.side_size // self.patch_size, 3)) # centercrop
           flow = np.transpose(flow, (2,0,1))
-          flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
+          flow = flow * 10 # multiply 50 to "keep proper scale" according to [1]
           otherview_flows.append(torch.FloatTensor(flow))
         
     #print("-------------otherview_flows------------", len(otherview_flows)) 
