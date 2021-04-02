@@ -24,6 +24,14 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 import torch.nn.functional as F
 
+def cropND(img, bounding):
+    start = tuple(map(lambda a, da: a//2-da//2, img.shape, bounding))
+    end = tuple(map(operator.add, start, bounding))
+    slices = tuple(map(slice, start, end))
+    return img[slices]
+
+
+
 class NTURGBDwithFlow(Dataset):
   """
     NTU RGB+D dataset with preextracted 3D flow for Viewpoint-Invariant Scene
@@ -39,7 +47,8 @@ class NTURGBDwithFlow(Dataset):
     flow_h5_dir, 
     target_length, 
     subset, 
-    visual_transform='normalize'
+    visual_transform='normalize',
+    args
     ):
     """
     Args:
@@ -78,6 +87,7 @@ class NTURGBDwithFlow(Dataset):
 
     self.videonames = []
     self.videonames_sequences = []
+    self.args = args
     """
       Videoname looks like  in the format of SsssCcccPpppRrrrAaaa 
     (e.g., S001C002P003R002A013), in which sss is the setup number, ccc is 
@@ -654,13 +664,6 @@ class NTURGBDwithFlow(Dataset):
 
     return sample
 
-def cropND(img, bounding):
-    start = tuple(map(lambda a, da: a//2-da//2, img.shape, bounding))
-    end = tuple(map(operator.add, start, bounding))
-    slices = tuple(map(slice, start, end))
-    return img[slices]
-
-
 
 def NTURGBDwithFlowLoaderCS(
     json_file, 
@@ -674,7 +677,8 @@ def NTURGBDwithFlowLoaderCS(
     batch_size=1, 
     shuffle=True, 
     num_workers=1, 
-    pin_memory=False
+    pin_memory=False,
+    args,
     ):
 
   # load dataset
@@ -686,7 +690,8 @@ def NTURGBDwithFlowLoaderCS(
     flow_h5_dir=flow_h5_dir, 
     target_length=target_length, 
     subset=subset, 
-    visual_transform=visual_transform
+    visual_transform=visual_transform,
+    args=args
     )
 
   # data loader for custom dataset
@@ -699,7 +704,6 @@ def NTURGBDwithFlowLoaderCS(
     )
 
   return data_loader, dataset
-
 
 
 def NTURGBDwithFlowLoaderCSValidation(
@@ -714,7 +718,8 @@ def NTURGBDwithFlowLoaderCSValidation(
     batch_size=1, 
     shuffle=False, 
     num_workers=1, 
-    pin_memory=False
+    pin_memory=False,
+    args,
     ):
 
   # load dataset
@@ -726,7 +731,8 @@ def NTURGBDwithFlowLoaderCSValidation(
     flow_h5_dir=flow_h5_dir, 
     target_length=target_length, 
     subset=subset, 
-    visual_transform=visual_transform
+    visual_transform=visual_transform,
+    args=args
     )
 
   # data loader for custom dataset
@@ -739,9 +745,6 @@ def NTURGBDwithFlowLoaderCSValidation(
     )
 
   return data_loader, dataset
-
-
-
 
 
 class NTURGBDwithFlowValidation(Dataset):
@@ -759,7 +762,8 @@ class NTURGBDwithFlowValidation(Dataset):
     flow_h5_dir,
     target_length, 
     subset, 
-    visual_transform='normalize'
+    visual_transform='normalize',
+    args
     ):
 
     with open(json_file, 'r', encoding='utf-8') as fp:
@@ -782,6 +786,7 @@ class NTURGBDwithFlowValidation(Dataset):
 
     self.videonames = []
     self.videonames_sequences = []
+    self.args = args
     
     ActionClasses = np.zeros(60)
     Subjects = np.zeros(40)

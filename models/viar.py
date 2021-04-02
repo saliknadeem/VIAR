@@ -23,7 +23,6 @@ from networks import CNN, Encoder, CrossViewDecoder, \
 sys.path.append('..')
 #from dataloader.NTURGBDwithFlowLoader import NTURGBDwithFlowLoader
 from dataloader.NTURGBDwithFlowLoaderVal import NTURGBDwithFlowLoaderCSValidation ,NTURGBDwithFlowLoaderCS
-
 from dataloader.NTURGBDwithFlowLoader_crossview import NTURGBDwithFlowLoaderCV
 
 
@@ -36,6 +35,8 @@ RGBD_INPUT_SHAPE = (4,224,224)
 FLOW_SHAPE = (3,224,224)
 ALL_MODELS = ['encodercnn', 'encoder','crossviewdecoder','crossviewdecodercnn',
               'reconstructiondecoder','viewclassifier', 'actionclassifier', 'multitasklosswrapper']
+CONTRASTIVE_MODELS = ['encodercnn', 'encoder','crossviewcnn','crossviewencoder',
+                      'reconstructioncnn','reconstructionencoder','viewclassifier', 'actionclassifier']
 LOG_PREFIX = 'VIAR'
 
 def main():
@@ -53,6 +54,9 @@ def main():
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   margs['device'] = device
 
+  if args.contrastive:
+    ALL_MODELS = CONTRASTIVE_MODELS
+  
   checkpoint_files = setCheckpointFileDict(ALL_MODELS, args.checkpoint_files)
 
   models = build_models(args, device=device)
@@ -98,19 +102,36 @@ def build_models(args, device='cuda'):
     #input_shape= (args.batch_size*args.target_length,64,49), encoder_block='brnn', #encoder_block='convbilstm',  #skl
     #hidden_size=args.encoder_hid_size).to(device)
 
+  if args.contrastive:
+    models['crossviewcnn'] = CNN(
+      input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model, 
+      input_channel=1).to(device)
+    models['crossviewencoder'] = Encoder(
+      input_shape= models['crossviewcnn'].out_size, encoder_block='convbilstm', #encoder_block='convbilstm',  #skl
+      hidden_size=args.encoder_hid_size).to(device)  
 
-  models['crossviewdecodercnn'] = CNN(
-    input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model, 
-    input_channel=1).to(device)
+    models['reconstructioncnn'] = CNN(
+      input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model, 
+      input_channel=1).to(device)
+    models['reconstructionencoder'] = Encoder(
+      input_shape= models['reconstructioncnn'].out_size, encoder_block='convbilstm', #encoder_block='convbilstm',  #skl
+      hidden_size=args.encoder_hid_size).to(device)  
 
-  crossviewdecoder_in_size = list(models['crossviewdecodercnn'].out_size)
-  crossviewdecoder_in_size[0] = crossviewdecoder_in_size[0] * 3
-  crossviewdecoder_in_size = torch.Size(crossviewdecoder_in_size)
-  models['crossviewdecoder'] = CrossViewDecoder(
-    input_shape=crossviewdecoder_in_size).to(device)
+  else:
+    models['crossviewdecodercnn'] = CNN(
+      input_shape=DEPTH_INPUT_SHAPE, model_name=args.encoder_cnn_model, 
+      input_channel=1).to(device)
 
-  models['reconstructiondecoder'] = ReconstructionDecoder(
-    input_shape=models['encoder'].out_size[1:]).to(device)
+    crossviewdecoder_in_size = list(models['crossviewdecodercnn'].out_size)
+    crossviewdecoder_in_size[0] = crossviewdecoder_in_size[0] * 3
+    crossviewdecoder_in_size = torch.Size(crossviewdecoder_in_size)
+    models['crossviewdecoder'] = CrossViewDecoder(
+      input_shape=crossviewdecoder_in_size).to(device)
+
+    models['reconstructiondecoder'] = ReconstructionDecoder(
+      input_shape=models['encoder'].out_size[1:]).to(device)
+
+    models['multitasklosswrapper'] = MultiTaskLossWrapper(models=models).to(device)
 
   models['viewclassifier'] = ViewClassifier(
     input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
@@ -123,7 +144,6 @@ def build_models(args, device='cuda'):
   #print("----------models['encoder'].out_size[1:]--------",models['encoder'].out_size[1:])
   #print("----------input_size--------", reduce(operator.mul, models['encoder'].out_size[1:]) )
 
-  models['multitasklosswrapper'] = MultiTaskLossWrapper(models=models).to(device)
 
   return models
 
@@ -140,7 +160,8 @@ def main_train(checkpoint_files, args, margs, models):
     batch_size=args.batch_size, 
     shuffle=True, 
     num_workers=args.num_workers, 
-    pin_memory=True
+    pin_memory=True,
+    args=args,
     ) 
 
   val_loader, val_dataset = NTURGBDwithFlowLoaderCS(
@@ -155,7 +176,8 @@ def main_train(checkpoint_files, args, margs, models):
     batch_size= args.batch_size, 
     shuffle=False, 
     num_workers=args.num_workers, 
-    pin_memory=True
+    pin_memory=True,
+    args=args,
     ) 
   #exit()
   trainIters(run, args.target_modules, 
@@ -269,31 +291,19 @@ def run(split, sample, models, target_modules=[], device='cuda',
         ).to(device)
       encodercnn_output = models['encodercnn'](rgbd_input)
   elif args.modality == 'pdflow':
-      #print("-----=-=-=-sample['flows']",sample['flows'].shape)
-      #pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
-      #print("-----=-=-=-pdflow_input",pdflow_input.shape)
       pdflow_input = sample['flowsActual'].view(
         (batch_size*target_length,) + FLOW_SHAPE
         ).to(device)
-      #print("-----=-=-=-pdflow_input",pdflow_input.shape)
       encodercnn_output = models['encodercnn'](pdflow_input)
   
-  #print("-------pdflow_input=",pdflow_input.shape)
-  #print("-------encoderCNNout=",encodercnn_output.shape)
-  #print("-------encoderCNNout elem=",encodercnn_output.numel())
-  #print("-------models['encodercnn'].out_size=",models['encodercnn'].out_size)
+
   
   encodercnn_output = encodercnn_output.view(
     (batch_size, target_length) + models['encodercnn'].out_size )
   #print("-------encoderCNNout=",encodercnn_output.shape)
   encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
   
-  #print("-------encoderout=",encoder_output.shape)
-    
-  #print("-------encoderout=",encoder_output.contiguous().view(
-  #  (batch_size*target_length,) + models['encoder'].out_size[1:] ).shape)
-   
-  #exit()
+
   if split == 'test':
     result['output']['encoder_output'] = encoder_output
   encoder_output = encoder_output.contiguous().view(
@@ -301,59 +311,46 @@ def run(split, sample, models, target_modules=[], device='cuda',
 
 
 
+  if args.contrastive:
 
-  # CrossViewDecoder
-  otherview_depth_input = sample['otherview_depths'].view(
-    (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
-  otherview2_depth_input = sample['otherview2_depths'].view(
-    (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device) #skl
-
-  crossviewcnn_output = models['crossviewdecodercnn'](otherview_depth_input)
-  crossviewcnn_output2 = models['crossviewdecodercnn'](otherview2_depth_input) #skl
-  #print('crossviewcnn_output======',crossviewcnn_output.shape)
-  #print('encoder_output======',encoder_output.shape)
+      crossview_input = sample['flowsActual'].view(
+        (batch_size*target_length,) + FLOW_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](pdflow_input)
 
 
 
-  #print('encodercnn_output======',encodercnn_output.shape)
+    crossviewcnn_output = encodercnn_output.view(
+      (batch_size, target_length) + models['encodercnn'].out_size )
+    #print("-------encoderCNNout=",encodercnn_output.shape)
+    encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
+
+
+
+  else:
+    # CrossViewDecoder
+    otherview_depth_input = sample['otherview_depths'].view(
+      (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
+    otherview2_depth_input = sample['otherview2_depths'].view(
+      (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device) #skl
+
+    crossviewcnn_output = models['crossviewdecodercnn'](otherview_depth_input)
+    crossviewcnn_output2 = models['crossviewdecodercnn'](otherview2_depth_input) #skl
+    crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
+    crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
+    crossview_output = crossview_output.view(
+      (batch_size, target_length) + models['crossviewdecoder'].out_size )
+    crossview_output2 = crossview_output2.view(
+      (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
+
+    # ReconstructionDecoder
+    reconstruct_output = models['reconstructiondecoder'](encoder_output)
+    reconstruct_output = reconstruct_output.view(
+      (batch_size, target_length) + models['reconstructiondecoder'].out_size )
+
+
+
   
-  #encodercnn_output = np.pad(encodercnn_output.cpu,[(0, 0),(0, 0),(0, 0), (98, 98),(98, 98)],mode='constant')
-  #print('encodercnn_output======',encodercnn_output.shape)
-  #print('encoder_output======',encoder_output.shape)
-  #print('crossviewcnn_output======',crossviewcnn_output.shape) 
-    
-
-  '''
-    encodercnn_output====== torch.Size([8, 6, 64, 7, 7])
-    encoder_output====== torch.Size([48, 128, 7, 7])
-    crossviewcnn_output====== torch.Size([48, 64, 7, 7])
-    
-    
-    encodercnn_output====== torch.Size([8, 6, 64, 7, 7])
-    encoder_output====== torch.Size([48, 256, 7, 7])
-    crossviewcnn_output====== torch.Size([48, 64, 7, 7])
-
-  '''
-
-  #print('crossviewcnn_output======',crossviewcnn_output.shape)
-  #print('encoder_output======',encoder_output.shape)
-  crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
-  #print('crossview_output======',crossview_output.shape)
-  crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
-  crossview_output = crossview_output.view(
-    (batch_size, target_length) + models['crossviewdecoder'].out_size )
-  #print('crossview_output======',crossview_output.shape)
-  crossview_output2 = crossview_output2.view(
-    (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
-    
-
-
-  # ReconstructionDecoder
-  reconstruct_output = models['reconstructiondecoder'](encoder_output)
-  reconstruct_output = reconstruct_output.view(
-    (batch_size, target_length) + models['reconstructiondecoder'].out_size )
-
-    
   # ViewClassifier
   viewclassify_output = models['viewclassifier'](
     encoder_output.view(batch_size*target_length,-1) )
@@ -650,6 +647,11 @@ def get_args():
   parser.add_argument('--mtl', dest='mtl',
     default=False, action='store_true',
     help='Disable MTL')
+
+  # Enable or disable contrastive
+  parser.add_argument('--contrastive', dest='contrastive',
+    default=False, action='store_true',
+    help='Disable contrastive')
     
   parser.add_argument('--n-epoch', dest='n_epoch',
     type=int, default=8, help='total epochs')
