@@ -97,7 +97,7 @@ def setCheckpointFileDict(all_models, checkpoint_files):
 
   return output
 
-def loadCheckpoints(models, modules, optimizers, checkpoint_files={}):
+def loadCheckpoints(models, modules, optimizers, schedulers, checkpoint_files={}):
   # checkpoint_files should specify model name as key and to specify starting 
   # iteration number, 'iter' key should be in checkpoint_files
   if len(checkpoint_files) > 0:
@@ -123,6 +123,7 @@ def loadCheckpoints(models, modules, optimizers, checkpoint_files={}):
         if '{}_optimizer'.format(m) in checkpoint:
           optimizers[m].load_state_dict(checkpoint['{}_optimizer'.format(m)])
           print('{}_optimizer checkpoint file loaded ({})'.format(m, checkpoint_files[m]))
+          schedulers[m].load_state_dict(checkpoint['{}schedulers'.format(m)])
         else:
           print('{}_optimizer is not in the checkpoint file. '
                 'Not loaded ({})'.format(m, checkpoint_files[m]))
@@ -254,6 +255,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
 
   # optimizers and criterions
   optimizers = {}
+  schedulers = {}
   for m in target_modules:
     #if m == 'encoder':
     #    optimizers[m] = optim.Adam(models[m].parameters(), 
@@ -261,6 +263,8 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     #else:
     optimizers[m] = optim.Adam(models[m].parameters(), 
                                lr=args.learning_rate, weight_decay=5e-4 ) #, eps=1e-09) #, betas=(0.9, 0.999), eps=1e-08)
+    #schedulers[m] = torch.optim.lr_scheduler.CyclicLR(optimizers[m], base_lr=args.learning_rate, max_lr=0.01,step_size_up=5,mode="triangular2")
+    schedulers[m] = torch.optim.lr_scheduler.StepLR(optimizers[m], step_size=args.learning_rate_decay, gamma=0.5)
 
   criterions = {}
   criterions['crossview'] = nn.MSELoss( reduction='sum') #,reduce=True)# size_average=False, reduce=True)
@@ -273,7 +277,7 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
   n_iters = math.ceil(n_epoch * len(train_dataset) / args.batch_size)
 
   epoch_start, iter = 1, 1
-  epoch_start, iter = loadCheckpoints(models, target_modules, optimizers, checkpoint_files)
+  epoch_start, iter = loadCheckpoints(models, target_modules, optimizers,schedulers, checkpoint_files)
   print('Starts from epoch {} and iteration {}'.format(epoch_start, iter))
 
   # Create tensorboard and record command line arguments
@@ -287,96 +291,144 @@ def trainIters(run, target_modules, train_loader, train_dataset, val_loader, val
     cmdline = cmdline.replace('{', '\'{').replace('}', '}\'')
     writer.add_text('Command line', cmdline, iter)
 
+  if args.single_batch:
+      #print("trainloader-",train_loader)
+      #single_sample = iter(train_loader)
+      single_sample = train_loader.__iter__().next()
+
   for epoch_num in range(epoch_start, n_epoch + 1):
     
-    for batch_ind, sample in enumerate(train_loader):
-      #print("chefininsdinsidnsidni")
-      train_result = run(target_modules=target_modules,
-                         split='train',
-                         sample=sample, 
-                         models=models, 
-                         optimizers=optimizers, 
-                         criterions=criterions,
-                         args=args,
-                         device=device)
 
-      if iter % args.record_every_iter == 0:
-        for log in train_result['logs']:
-          writer.add_scalar(
-            'train_data/{}'.format(log), train_result['logs'][log], iter
-            )
-        print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
-          unique_name, epoch_num,args.learning_rate, iter, timeSince(start, iter / n_iters)
+    if not args.single_batch:
+      for batch_ind, sample in enumerate(train_loader):
+        #print("chefininsdinsidnsidni")
+        train_result = run(target_modules=target_modules,
+                          split='train',
+                          sample=sample, 
+                          models=models, 
+                          optimizers=optimizers, 
+                          schedulers=schedulers,
+                          criterions=criterions,
+                          args=args,
+                          device=device)
+
+        if iter % args.record_every_iter == 0:
+          for log in train_result['logs']:
+            writer.add_scalar(
+              'train_data/{}'.format(log), train_result['logs'][log], iter
+              )
+          print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
+            unique_name, epoch_num,optimizers['encoder'].param_groups[0]["lr"], iter, timeSince(start, iter / n_iters)
+            ) )
+        # iteration += 1 for every sample
+        
+        
+        #if iter % args.learning_rate_decay == 0:
+          #args.learning_rate = args.learning_rate/2.
+          #for m in target_modules:
+              #if m == 'encoder':
+              #    optimizers[m] = optim.Adam(models[m].parameters(), 
+              #                   lr=1e-5, weight_decay=5e-4)
+              #else:
+              #optimizers[m] = optim.Adam(models[m].parameters(), 
+              #                  lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
+
+        if iter == 5000 and args.disable_grl: #skl
+          args.disable_grl = False
+          models['viewclassifier'] = ViewClassifier(
+              input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
+              num_classes=5,
+              reverse=(not args.disable_grl)).to(device)
+
+        iter += 1
+          
+
+        if args.val_every_iter is not None:
+          if (args.val_every_iter < len(train_dataset)) and ((iter-1) % args.val_every_iter == 0):
+              print("--------breaking")
+              break # out of train_loader loop
+        
+      print('Validation ongoing...') 
+      # in validation use iter-1 for iteration # since iter was incremented in train loop
+      val_start = time.time()
+      val_logs = {}
+      for val_batch_ind, val_sample in enumerate(val_loader):
+        val_result = run(target_modules=target_modules,
+                        split='validate',
+                        sample=val_sample, 
+                        models=models, 
+                        criterions=criterions,
+                        args=args,
+                        device=device)
+
+        for log in val_result['logs']:
+          if log not in val_logs:
+            val_logs[log] = []
+          val_logs[log].append(val_result['logs'][log])
+
+        print('{}: Epoch: {:d}, Validation Sample: {:d}, ET: {}'.format(
+          unique_name, epoch_num, val_batch_ind + 1, 
+          timeSince(val_start, (val_batch_ind + 1) / args.val_size)
           ) )
-      # iteration += 1 for every sample
-      
-      
-      if iter % args.learning_rate_decay == 0:
-        args.learning_rate = args.learning_rate/2.
-        for m in target_modules:
-            #if m == 'encoder':
-            #    optimizers[m] = optim.Adam(models[m].parameters(), 
-            #                   lr=1e-5, weight_decay=5e-4)
-            #else:
-            optimizers[m] = optim.Adam(models[m].parameters(), 
-                               lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
- 
-      if iter == 5000 and args.disable_grl: #skl
-        args.disable_grl = False
-        models['viewclassifier'] = ViewClassifier(
-            input_size=reduce(operator.mul, models['encoder'].out_size[1:]), 
-            num_classes=5,
-            reverse=(not args.disable_grl)).to(device)
 
-      iter += 1
+        if (args.val_size < len(val_dataset)) and (val_batch_ind + 1 >= args.val_size):
+          break # out of val_loader loop
+
+      val_log_mean = {}
+      for log in val_logs:
+        val_log_mean[log] = torch.Tensor(val_logs[log]).mean()
+        writer.add_scalar(
+          'val_data/{}'.format(log), val_log_mean[log], iter-1
+          )
+
+      ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
+
+      # Save checkpoint every epoch    
+      save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers, schedulers,
+        filename=save_path.format(unique_name, epoch_num, iter-1) ) # mind iter-1
         
 
-      if args.val_every_iter is not None:
-        if (args.val_every_iter < len(train_dataset)) and ((iter-1) % args.val_every_iter == 0):
-            print("--------breaking")
-            break # out of train_loader loop
-       
-    print('Validation ongoing...') 
-    # in validation use iter-1 for iteration # since iter was incremented in train loop
-    val_start = time.time()
-    val_logs = {}
-    for val_batch_ind, val_sample in enumerate(val_loader):
-      val_result = run(target_modules=target_modules,
-                       split='validate',
-                       sample=val_sample, 
-                       models=models, 
-                       criterions=criterions,
-                       args=args,
-                       device=device)
+    elif args.single_batch:
+        train_result = run(target_modules=target_modules,
+                             split='train',
+                             sample=single_sample, 
+                             models=models, 
+                             optimizers=optimizers, 
+                             schedulers=schedulers,
+                             criterions=criterions,
+                             args=args,
+                             device=device)
 
-      for log in val_result['logs']:
-        if log not in val_logs:
-          val_logs[log] = []
-        val_logs[log].append(val_result['logs'][log])
+        if iter % args.record_every_iter == 0:
+            for log in train_result['logs']:
+              writer.add_scalar(
+                'train_data/{}'.format(log), train_result['logs'][log], iter
+                )
+            print('{}: Epoch: {:d}, LR: {}, Sample: {:d}, ET: {}'.format(
+              unique_name, epoch_num,optimizers['encoder'].param_groups[0]["lr"], iter, timeSince(start, iter / n_iters)
+              ) )
+          # iteration += 1 for every sample
 
-      print('{}: Epoch: {:d}, Validation Sample: {:d}, ET: {}'.format(
-        unique_name, epoch_num, val_batch_ind + 1, 
-        timeSince(val_start, (val_batch_ind + 1) / args.val_size)
-        ) )
-
-      if (args.val_size < len(val_dataset)) and (val_batch_ind + 1 >= args.val_size):
-        break # out of val_loader loop
-
-    val_log_mean = {}
-    for log in val_logs:
-      val_log_mean[log] = torch.Tensor(val_logs[log]).mean()
-      writer.add_scalar(
-        'val_data/{}'.format(log), val_log_mean[log], iter-1
-        )
-
-    ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
-
-    # Save checkpoint every epoch    
-    save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers,
-      filename=save_path.format(unique_name, epoch_num, iter-1) ) # mind iter-1
+        #if iter % args.learning_rate_decay == 0:
+            #args.learning_rate = args.learning_rate/2.
+            #for m in target_modules:
+                #if m == 'encoder':
+                #    optimizers[m] = optim.Adam(models[m].parameters(), 
+                #                   lr=1e-5, weight_decay=5e-4)
+                #else:
+                #optimizers[m] = optim.Adam(models[m].parameters(), 
+                #                   lr=args.learning_rate, weight_decay=5e-4) #, betas=(0.9, 0.999), eps=1e-08)
 
 
-def save_checkpoint(epoch, iter, models, modules, optimizers, 
+        iter += 1
+
+        ####print('Validation Flow Prediction Error: {}'.format(val_log_mean['reconstruct_loss']))
+        # Save checkpoint every epoch    
+        #save_checkpoint(epoch_num, iter-1, models, target_modules, optimizers,
+        #  filename=save_path.format(unique_name, epoch_num, iter-1) ) # mind iter-1
+  return
+
+def save_checkpoint(epoch, iter, models, modules, optimizers, schedulers,
                     filename='checkpoint.pth.tar'):
   save_dict = {}
   save_dict['epoch'] = epoch
@@ -385,5 +437,7 @@ def save_checkpoint(epoch, iter, models, modules, optimizers,
     save_dict[m] = models[m].state_dict()
     if m in modules:
       save_dict[m + '_optimizer'] = optimizers[m].state_dict()
+      save_dict[m + '_schedulers'] = schedulers[m].state_dict()
+      
   torch.save(save_dict, filename)
   print('Saved checkpoint to: {}'.format(filename))

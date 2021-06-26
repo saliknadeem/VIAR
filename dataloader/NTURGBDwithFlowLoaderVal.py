@@ -337,10 +337,13 @@ class NTURGBDwithFlow(Dataset):
     #print("-------------RGBs 0------------", len(rgbs[:]))
     #print("-----------frames--------------", frame_indices)
 
-
-
     for byte in depth_h5['pngs'][frame_indices]:
-      depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+      #depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+      #print("------",np.shape(byte))
+      #depth = np.array(bytes, dtype=np.uint16)
+      #depth = cv2.imread(byte)#, cv2.IMREAD_ANYDEPTH)
+      depth = np.array(byte,dtype=np.uint16)
+      ##
       depth = cropND(depth, (self.side_size, self.side_size))
       depth = np.expand_dims(depth, axis=0)
       depth = depth.astype(np.float32) / 65535
@@ -402,7 +405,6 @@ class NTURGBDwithFlow(Dataset):
     flows = torch.stack(flows)''' 
 
     
-
     flow_h5_path = os.path.join(self.flow_h5_dir, videoname + '_3dflow.h5')
     flow_h5 = h5py.File(flow_h5_path, 'r', libver='latest', swmr=True)
     flows = []
@@ -426,8 +428,8 @@ class NTURGBDwithFlow(Dataset):
       flowActual = np.transpose(flowActual, (2,0,1)) 
       #flow[flow<0.0001] = 0
       #flowActual[flowActual<0.0001] = 0
-      flowActual = flowActual * 10 # multiply 50 to "keep proper scale" according to [1]
-      flow = flow * 10 # multiply 50 to "keep proper scale" according to [1]
+      flowActual = flowActual * 50 # multiply 50 to "keep proper scale" according to [1]
+      flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
       flowsActual.append(torch.FloatTensor(flowActual))
       flows.append(torch.FloatTensor(flow))
     flows = torch.stack(flows)
@@ -560,7 +562,10 @@ class NTURGBDwithFlow(Dataset):
         otherview_depth_h5 = h5py.File(otherview_depth_h5_path, 'r', libver='latest', swmr=True)
  
         for byte in otherview_depth_h5['pngs'][otherview_frame_indices]:
-          depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+          #depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+          #depth = cv2.imread(byte)#, cv2.IMREAD_ANYDEPTH)
+          depth = np.array(byte,dtype=np.uint16)
+          ##
           depth = cropND(depth, (self.side_size, self.side_size))
           depth = np.expand_dims(depth, axis=0)
           depth = depth.astype(np.float32) / 65535
@@ -583,7 +588,7 @@ class NTURGBDwithFlow(Dataset):
           #print(np.shape(flow))
           #print(type(flow))
           #flow[flow<0.0001] = 0
-          flow = flow * 10 # multiply 50 to "keep proper scale" according to [1]
+          flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
           otherview_flows.append(torch.FloatTensor(flow))
         
     
@@ -929,7 +934,10 @@ class NTURGBDwithFlowValidation(Dataset):
     
     for frame_indices in frames:
         for byte in depth_h5['pngs'][list(frame_indices)]:
-          depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+          #depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+          #depth = cv2.imread(byte)#, cv2.IMREAD_ANYDEPTH)
+          depth = np.array(byte,dtype=np.uint16)
+          ##
           depth = cropND(depth, (self.side_size, self.side_size))
           depth = np.expand_dims(depth, axis=0)
           depth = depth.astype(np.float32) / 65535
@@ -972,7 +980,7 @@ class NTURGBDwithFlowValidation(Dataset):
         flowActual = resize(flowActual, (224, 224))
         flowActual = np.transpose(flowActual, (2,0,1))
         #flowActual[flowActual<0.0001] = 0
-        flowActual = flowActual * 10 # multiply 50 to "keep proper scale" according to [1]
+        flowActual = flowActual * 50 # multiply 50 to "keep proper scale" according to [1]
         flowsActual.append(torch.FloatTensor(flowActual))
         #####flows.append(torch.FloatTensor(flow))
         
@@ -983,7 +991,7 @@ class NTURGBDwithFlowValidation(Dataset):
         
         flow = torch.from_numpy(flow)
         #flow[flow<0.0001] = 0
-        flow = flow * 10 # multiply 50 to "keep proper scale" according to [1]
+        flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
         #flow[flow != 0] = flow[flow != 0] + 1.1980
         ##flow = flow + 1.1980
         flows.append(torch.FloatTensor(flow))
@@ -1073,7 +1081,10 @@ class NTURGBDwithFlowValidation(Dataset):
  
         for frame_indices in otherview_frame_indices:
             for byte in otherview_depth_h5['pngs'][list(frame_indices)]:
-              depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+              #depth = cv2.imdecode(byte, flags=cv2.IMREAD_UNCHANGED)
+              #depth = cv2.imread(byte)#, cv2.IMREAD_ANYDEPTH)
+              depth = np.array(byte,dtype=np.uint16)
+              ##
               depth = cropND(depth, (self.side_size, self.side_size))
               depth = np.expand_dims(depth, axis=0)
               depth = depth.astype(np.float32) / 65535
@@ -1092,7 +1103,7 @@ class NTURGBDwithFlowValidation(Dataset):
               flow = cv2.resize(np.asarray(f), (self.side_size // self.patch_size, self.side_size // self.patch_size), interpolation = cv2.INTER_AREA)
               flow = np.transpose(flow, (2,0,1))
               #flow[flow<0.0001] = 0
-              flow = flow * 10 # multiply 50 to "keep proper scale" according to [1]
+              flow = flow * 50 # multiply 50 to "keep proper scale" according to [1]
               #flow[flow != 0] = flow[flow != 0] + 1.1193
               ##flow = flow + 1.1193
               otherview_flows.append(torch.FloatTensor(flow))

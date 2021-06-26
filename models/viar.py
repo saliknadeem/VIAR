@@ -42,7 +42,7 @@ def main():
   args = get_args()
 
   margs = {}
-  margs['json_file'] = os.path.join(args.ntu_dir, 'ntu_rgbd_videonames_reduced_all.json')#'ntu_rgbd_videonames.min.json')
+  margs['json_file'] = os.path.join(args.ntu_dir, 'ntu_rgbd_videonames_reduced_aligned.json')# 'ntu_rgbd_videonames_reduced_aligned.json') #ntu_rgbd_videonames_reduced_all.json  #'ntu_rgbd_videonames.min.json')
   margs['label_file'] = os.path.join(args.ntu_dir, 'ntu_rgbd_action_labels.txt')
   margs['flow_h5_dir'] = os.path.join(args.ntu_dir, 'Extracted3DFlowH5')# '3DFlow')  #'Extracted3DFlowH5')
   margs['rgb_h5_dir'] = os.path.join(args.ntu_dir, 'nturgb+d_rgb_pngs_320x240_lanczos_h5')
@@ -227,7 +227,7 @@ def main_test(checkpoint_files, args, margs, models):
             checkpoint_files=checkpoint_files, args=args, device=margs['device'])
 
 def run(split, sample, models, target_modules=[], device='cuda',
-        optimizers=None, criterions=None, args=None):
+        optimizers=None, schedulers=None, criterions=None, args=None):
   result = {}
   result['logs'] = {}
   result['output'] = {}
@@ -245,7 +245,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
       models[m].eval()
 
   batch_size = len(sample['videoname'])
-  target_length = len(sample['rgbs'][0])
+  target_length = args.target_length ### len(sample['rgbs'][0])
 
   # Encoder
   if args.modality == 'rgb':
@@ -400,7 +400,7 @@ def run(split, sample, models, target_modules=[], device='cuda',
         #total_loss = loss 
 
     else:
-        total_loss += (crossview_loss   +   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+        total_loss += (crossview_loss  +   0.5 * reconstruct_loss ) #+ 0.05 * viewclassify_loss)
 
     
     
@@ -421,13 +421,13 @@ def run(split, sample, models, target_modules=[], device='cuda',
       total_loss.backward()
       #loss.backward(retain_graph=True)
       #crossview_loss.backward()
-      if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
-      if 'encoder' in target_modules: optimizers['encoder'].step()
-      if 'crossviewdecodercnn' in target_modules: optimizers['crossviewdecodercnn'].step()
-      if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].step()
-      if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].step()
-      if 'viewclassifier' in target_modules: optimizers['viewclassifier'].step()
-      if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].step()        
+      if 'encodercnn' in target_modules: optimizers['encodercnn'].step(); schedulers['encodercnn'].step();
+      if 'encoder' in target_modules: optimizers['encoder'].step(); schedulers['encoder'].step();
+      if 'crossviewdecodercnn' in target_modules: optimizers['crossviewdecodercnn'].step();schedulers['crossviewdecodercnn'].step();
+      if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].step();schedulers['crossviewdecoder'].step();
+      if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].step();schedulers['reconstructiondecoder'].step();
+      if 'viewclassifier' in target_modules: optimizers['viewclassifier'].step();schedulers['viewclassifier'].step();
+      if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].step();schedulers['multitasklosswrapper'].step();        
 
     #result['logs']['loss'] = total_loss.item() #if total_loss > 0 else 0
     result['logs']['loss'] = total_loss.item() #if loss > 0 else 0
@@ -439,15 +439,245 @@ def run(split, sample, models, target_modules=[], device='cuda',
   return result
 
 
+
+
+
+def runWithOutput(split, sample, models, target_modules=[], device='cuda',
+        optimizers=None,schedulers=None, criterions=None, args=None):
+  result = {}
+  result['logs'] = {}
+  result['output'] = {}
+  if split == 'train':
+    set_grad = True
+    for m in models:
+      if m in target_modules:
+        models[m].train()
+        optimizers[m].zero_grad()
+      else:
+        models[m].eval()
+  else:
+    set_grad = False
+    for m in models:
+      models[m].eval()
+
+  batch_size = len(sample['videoname'])
+  target_length = args.target_length #### len(sample['rgbs'][0])
+
+  # Encoder
+  if args.modality == 'rgb':
+      rgb_input = sample['rgbs'].view(
+        (batch_size*target_length,) + RGB_INPUT_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](rgb_input)
+  elif args.modality == 'depth':
+      depth_input = sample['depths'].view(
+        (batch_size*target_length,) + DEPTH_INPUT_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](depth_input)
+  elif args.modality == 'rgbd':
+      #print("sample['depths']===",sample['depths'].shape)
+      #print("sample['rgbs']===",sample['rgbs'].shape)
+      rgbd = torch.cat((sample['rgbs'], sample['depths']), 2)
+      #print("combined===",rgbd.shape)        
+      #exit()
+      rgbd_input = rgbd.view(
+        (batch_size*target_length,) + RGBD_INPUT_SHAPE
+        ).to(device)
+      encodercnn_output = models['encodercnn'](rgbd_input)
+  elif args.modality == 'pdflow':
+      #print("-----=-=-=-sample['flows']",sample['flows'].shape)
+      #pdflow_input = torch.Tensor(np.pad(sample['flows'],[(0, 0), (0, 0),(0, 0), (98, 98),(98, 98)],mode='constant'))
+      #print("-----=-=-=-pdflow_input",pdflow_input.shape)
+      pdflow_input = sample['flowsActual'].view(
+        (batch_size*target_length,) + FLOW_SHAPE
+        ).to(device)
+      #print("-----=-=-=-pdflow_input",pdflow_input.shape)
+      encodercnn_output = models['encodercnn'](pdflow_input)
+  
+  #print("-------pdflow_input=",pdflow_input.shape)
+  #print("-------encoderCNNout=",encodercnn_output.shape)
+  #print("-------encoderCNNout elem=",encodercnn_output.numel())
+  #print("-------models['encodercnn'].out_size=",models['encodercnn'].out_size)
+  
+  encodercnn_output = encodercnn_output.view(
+    (batch_size, target_length) + models['encodercnn'].out_size )
+  #print("-------encoderCNNout=",encodercnn_output.shape)
+  encoder_output, _ = models['encoder'](encodercnn_output) # (batch, seq_len, c, h, w)
+  
+  #print("-------encoderout=",encoder_output.shape)
+    
+  #print("-------encoderout=",encoder_output.contiguous().view(
+  #  (batch_size*target_length,) + models['encoder'].out_size[1:] ).shape)
+   
+  #exit()
+  if split == 'test':
+    result['output']['encoder_output'] = encoder_output
+  encoder_output = encoder_output.contiguous().view(
+    (batch_size*target_length,) + models['encoder'].out_size[1:] )
+
+
+
+
+  # CrossViewDecoder
+  otherview_depth_input = sample['otherview_depths'].view(
+    (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device)
+  otherview2_depth_input = sample['otherview2_depths'].view(
+    (batch_size*target_length,) + DEPTH_INPUT_SHAPE ).to(device) #skl
+
+  crossviewcnn_output = models['crossviewdecodercnn'](otherview_depth_input)
+  crossviewcnn_output2 = models['crossviewdecodercnn'](otherview2_depth_input) #skl
+  #print('crossviewcnn_output======',crossviewcnn_output.shape)
+  #print('encoder_output======',encoder_output.shape)
+
+
+
+  #print('encodercnn_output======',encodercnn_output.shape)
+  
+  #encodercnn_output = np.pad(encodercnn_output.cpu,[(0, 0),(0, 0),(0, 0), (98, 98),(98, 98)],mode='constant')
+  #print('encodercnn_output======',encodercnn_output.shape)
+  #print('encoder_output======',encoder_output.shape)
+  #print('crossviewcnn_output======',crossviewcnn_output.shape) 
+    
+
+  '''
+    encodercnn_output====== torch.Size([8, 6, 64, 7, 7])
+    encoder_output====== torch.Size([48, 128, 7, 7])
+    crossviewcnn_output====== torch.Size([48, 64, 7, 7])
+    
+    
+    encodercnn_output====== torch.Size([8, 6, 64, 7, 7])
+    encoder_output====== torch.Size([48, 256, 7, 7])
+    crossviewcnn_output====== torch.Size([48, 64, 7, 7])
+
+  '''
+
+  #print('crossviewcnn_output======',crossviewcnn_output.shape)
+  #print('encoder_output======',encoder_output.shape)
+  crossview_output = models['crossviewdecoder'](crossviewcnn_output, encoder_output)
+  #print('crossview_output======',crossview_output.shape)
+  crossview_output2 = models['crossviewdecoder'](crossviewcnn_output2, encoder_output) #skl
+  crossview_output = crossview_output.view(
+    (batch_size, target_length) + models['crossviewdecoder'].out_size )
+  #print('crossview_output======',crossview_output.shape)
+  crossview_output2 = crossview_output2.view(
+    (batch_size, target_length) + models['crossviewdecoder'].out_size ) #skl
+    
+
+
+  # ReconstructionDecoder
+  reconstruct_output = models['reconstructiondecoder'](encoder_output)
+  reconstruct_output = reconstruct_output.view(
+    (batch_size, target_length) + models['reconstructiondecoder'].out_size )
+
+    
+  # ViewClassifier
+  viewclassify_output = models['viewclassifier'](
+    encoder_output.view(batch_size*target_length,-1) )
+  viewclassify_output = viewclassify_output.view(
+    (batch_size, target_length) + (models['viewclassifier'].num_classes,) )  
+
+    
+
+  result['output']['recon'] = reconstruct_output
+  result['output']['crossview'] = crossview_output
+  result['output']['crossview2'] = crossview_output2
+  
+  ######################## MTL #################################  
+  if args.mtl :
+    loss, log_vars = models['multitasklosswrapper'](sample, criterions, encoder_output)
+  
+  if split in ['train', 'validate']:
+    if set_grad:
+      if 'encodercnn' in target_modules: optimizers['encodercnn'].zero_grad()
+      if 'encoder' in target_modules: optimizers['encoder'].zero_grad()
+      if 'crossviewdecodercnn' in target_modules: optimizers['crossviewdecodercnn'].zero_grad()
+      if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].zero_grad()
+      if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].zero_grad()
+      if 'viewclassifier' in target_modules: optimizers['viewclassifier'].zero_grad() #actionaction needed
+      if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].zero_grad() #actionaction needed      
+
+
+    total_loss = 0
+    #view_accuracy = 0 #skl
+    correct=0
+    crossview_loss = 0
+    
+    
+    #print('============================crossview_output=====',crossview_output.shape)
+    #print('============================sample[otherview_flows]=====',sample['otherview_flows'].shape)    
+    
+    crossview_loss1 = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
+    #print('============================crossview_loss1=====',crossview_loss1) 
+    crossview_loss2 = criterions['crossview'](crossview_output2, sample['otherview2_flows'].to(device))
+    ####crossview_loss = criterions['crossview'](crossview_output, sample['otherview_flows'].to(device))
+    crossview_loss = crossview_loss1+crossview_loss2
+
+    reconstruct_loss = criterions['reconstruct'](reconstruct_output, sample['flows'].to(device))
+    viewclassify_loss = criterions['viewclassify'](viewclassify_output, sample['view_id'].long().to(device))
+    #exit()
+    
+    if args.mtl:
+        total_loss += (crossview_loss +  loss )   #   0.5 * reconstruct_loss + 0.05 * viewclassify_loss)
+        #total_loss = loss 
+
+    else:
+        total_loss += (crossview_loss  +   0.5 * reconstruct_loss ) # + 0.05 * viewclassify_loss)
+
+    
+    
+    """ Code to see accuracy """
+    """
+    accuracy_out = criterions['view_accuracy'](viewclassify_output.to(device))
+    viewclassify_max_idx = torch.argmax(accuracy_out, 2, keepdim=False)
+    view_IDs = torch.argmax(sample['view_id'], -1, keepdim=False)
+    true_preds = [view_IDs[i].repeat(viewclassify_max_idx.shape[-1]) for i in range(viewclassify_max_idx.shape[0])]
+    correct +=  (torch.sum(  torch.eq(viewclassify_max_idx, torch.stack(true_preds).to(device))   ,dim=-1)/float(target_length)).mean()
+    view_accuracy += 100. * correct
+    """
+    
+    
+    
+    
+    if set_grad: #and total_loss != 0:
+      total_loss.backward()
+      #loss.backward(retain_graph=True)
+      #crossview_loss.backward()
+      if 'encodercnn' in target_modules: optimizers['encodercnn'].step(); schedulers['encodercnn'].step();
+      if 'encoder' in target_modules: optimizers['encoder'].step(); schedulers['encoder'].step();
+      if 'crossviewdecodercnn' in target_modules: optimizers['crossviewdecodercnn'].step();schedulers['crossviewdecodercnn'].step();
+      if 'crossviewdecoder' in target_modules: optimizers['crossviewdecoder'].step();schedulers['crossviewdecoder'].step();
+      if 'reconstructiondecoder' in target_modules: optimizers['reconstructiondecoder'].step();schedulers['reconstructiondecoder'].step();
+      if 'viewclassifier' in target_modules: optimizers['viewclassifier'].step();schedulers['viewclassifier'].step();
+      if 'multitasklosswrapper' in target_modules: optimizers['multitasklosswrapper'].step();schedulers['multitasklosswrapper'].step();        
+        
+
+    #result['logs']['loss'] = total_loss.item() #if total_loss > 0 else 0
+    result['logs']['loss'] = total_loss.item() #if loss > 0 else 0
+    result['logs']['crossview_loss'] = crossview_loss.item() #if crossview_loss > 0 else 0
+    result['logs']['reconstruct_loss'] = reconstruct_loss.item() #if reconstruct_loss > 0 else 0
+    result['logs']['viewclassify_loss'] = viewclassify_loss.item() #if viewclassify_loss > 0 else 0
+    #result['logs']['viewclassify_accuracy'] = view_accuracy.item() if view_accuracy > 0 else 0
+
+  return result
+
+
+
+
+
+
+
+
+
+
 def runAction(split, sample, models, target_modules=[], device='cuda',
-        optimizers=None, criterions=None, args=None):
+        optimizers=None, schedulers=None, criterions=None, args=None):
   result = {}
   result['logs'] = {}
   result['output'] = {}
   if split == 'train':
     set_grad = True
     batch_size = len(sample['videoname'])
-    target_length = len(sample['rgbs'][0])
+    target_length = args.target_length ### len(sample['rgbs'][0])
     for m in models:
       if m in target_modules:
         models[m].train()
@@ -457,7 +687,7 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
   else:
     set_grad = False
     batch_size = 10 #len(sample['videoname'])
-    target_length = 6
+    target_length = args.target_length ### 6
     for m in models:
       models[m].eval()
 
@@ -596,7 +826,7 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
     #print("action_acc_mean_T=",action_acc_mean_T.shape,"\n",action_acc_mean_T) # ([16, 60])
     ##############
     
-      
+    
     
     #print("actionclassify_max_idx=",actionclassify_max_idx.shape,actionclassify_max_idx) # ([16])
     
@@ -621,10 +851,10 @@ def runAction(split, sample, models, target_modules=[], device='cuda',
       action_loss.backward()
       #torch.nn.utils.clip_grad_norm(models['encoder'].parameters(), max_norm=1)
       
-      if 'encodercnn' in target_modules: optimizers['encodercnn'].step()
+      if 'encodercnn' in target_modules: optimizers['encodercnn'].step();schedulers['encodercnn'].step();
       if not args.fix_encoder:
-          if 'encoder' in target_modules: optimizers['encoder'].step()
-      if 'actionclassifier' in target_modules: optimizers['actionclassifier'].step() 
+          if 'encoder' in target_modules: optimizers['encoder'].step();schedulers['encoder'].step();
+      if 'actionclassifier' in target_modules: optimizers['actionclassifier'].step();schedulers['actionclassifier'].step();
 
     result['logs']['actionclassify'] = action_loss.item() if action_loss > 0 else 0
     result['logs']['actionrecognition_accuracy'] = action_accuracy.item() if action_accuracy > 0 else 0
@@ -671,6 +901,7 @@ def get_args():
     action='store_const', const='trainAction', default='trainAction', help='TrainAction')
   parser.add_argument('--test', dest='for_what', 
     action='store_const', const='test', help='Test')
+    
   parser.add_argument('--target-modules', dest='target_modules', 
     default=ALL_MODELS, nargs="*", choices=ALL_MODELS, 
     help='Modules to train or test')
@@ -711,7 +942,7 @@ def get_args():
   parser.add_argument('--learning-rate', dest='learning_rate',
     type=float, default=1e-5, help='Learning rate for training')
   parser.add_argument('--learning-rate-decay', dest='learning_rate_decay',
-    type=float, default=50000, help='Learning rate decay for training')
+    type=float, default=20000, help='Learning rate decay for training')
   parser.add_argument('--val-every-iter', dest='val_every_iter',
     type=int, default=None, 
     help='Run validation every val_every_iter iterations. If None, validation '

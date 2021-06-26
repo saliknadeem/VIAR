@@ -23,7 +23,7 @@ import math
 
 
 class CNN(nn.Module):
-  def __init__(self, input_shape, model_name='resnet50', input_channel=3):
+  def __init__(self, input_shape, model_name='resnet18', input_channel=3):
     super(CNN, self).__init__()
     self.model_name = model_name
     self.out_size = None
@@ -103,10 +103,10 @@ class Encoder(nn.Module):
         in_channels=self.input_shape[0],  # Corresponds to input size
         out_channels=self.hidden_size,  # Corresponds to hidden size
         kernel_size=7,  # Int or List[int]
-        #num_layers=1, stride=1, dropout=0.2, #### skl it was 1
+        #num_layers=2, #stride=1, dropout=0.2, #### skl it was 1
         bidirectional=True,
-        #dilation=1,stride=1, dropout=0.25,
-        dropout=0.2,
+        dilation=1,stride=1, dropout=0.2,
+        #dropout=0.0,
         num_layers=self.num_layers,
         batch_first=True
         )
@@ -477,23 +477,23 @@ class CrossViewDecoder(nn.Module):
     #########################original ##########################
         # Transposed Conv
     self.deconv2d_1 = nn.ConvTranspose2d(
-      in_channels=self.input_shape[0], out_channels=80, kernel_size=3, 
+      in_channels=self.input_shape[0], out_channels=112, kernel_size=3, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
       #stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1) #skl
-    self.deconv2d_1_bn = nn.BatchNorm2d(80) #skl 80
+    self.deconv2d_1_bn = nn.BatchNorm2d(112) #skl 80
 
     self.deconv2d_2 = nn.ConvTranspose2d(
-      in_channels=80, out_channels=36, kernel_size=3, 
+      in_channels=112, out_channels=80, kernel_size=3, 
       stride=2, padding=0, output_padding=1, groups=1, bias=True, dilation=1)
-    self.deconv2d_2_bn = nn.BatchNorm2d(36) #skl 36
+    self.deconv2d_2_bn = nn.BatchNorm2d(80) #skl 36
 
     self.deconv2d_3 = nn.ConvTranspose2d(
-      in_channels=36, out_channels=17, kernel_size=5, 
+      in_channels=80, out_channels=36, kernel_size=5, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
-    self.deconv2d_3_bn = nn.BatchNorm2d(17) #skl 17
+    self.deconv2d_3_bn = nn.BatchNorm2d(36) #skl 17
 
     self.deconv2d_4 = nn.ConvTranspose2d(
-      in_channels=17, out_channels=3, kernel_size=5, 
+      in_channels=36, out_channels=3, kernel_size=5, 
       stride=1, padding=0, output_padding=0, groups=1, bias=True, dilation=1)
     self.deconv2d_4_bn = nn.BatchNorm2d(3)
     
@@ -712,7 +712,7 @@ class ActionClassifier(nn.Module):
     self.num_classes = num_classes
     
     self.fc1 = nn.Linear(input_size, self.num_classes)
-    #self.fc2 = nn.Linear(128, self.num_classes)
+    #self.fc2 = nn.Linear(64, self.num_classes)
 
     self.fc1.apply(self._init_weights)
     #self.fc2.apply(self._init_weights)
